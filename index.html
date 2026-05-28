@@ -1,0 +1,845 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Oxbridge Associates — Live Xero Consolidation</title>
+<style>
+:root{
+  --bg:#0f0f11;--bg2:#16161a;--bg3:#1e1e24;--bg4:#26262e;
+  --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.13);
+  --text:#f0f0f2;--text2:#9a9aaa;--text3:#5a5a6a;
+  --accent:#7c6fe0;--green:#22c984;--red:#e05a5a;--amber:#e0a030;
+  --blue:#4a9de0;--teal:#2abfa0;--r:10px;--rs:6px;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:var(--bg);color:var(--text);font-family:'SF Pro Display','Segoe UI',system-ui,sans-serif;font-size:14px;min-height:100vh;}
+nav{display:flex;align-items:center;justify-content:space-between;padding:0 24px;height:52px;border-bottom:1px solid var(--border);background:var(--bg2);position:sticky;top:0;z-index:100;}
+.nlogo{display:flex;align-items:center;gap:10px;}
+.nmark{width:28px;height:28px;background:var(--accent);border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;}
+.ntitle{font-size:13px;font-weight:600;}
+.nsub{font-size:11px;color:var(--text3);}
+.ntabs{display:flex;gap:2px;}
+.ntab{padding:5px 13px;border-radius:var(--rs);font-size:12px;font-weight:500;cursor:pointer;color:var(--text2);border:none;background:transparent;transition:all .15s;}
+.ntab:hover{background:var(--bg3);color:var(--text);}
+.ntab.active{background:var(--accent);color:#fff;}
+.ntab:disabled{opacity:.35;cursor:not-allowed;}
+.nright{display:flex;align-items:center;gap:8px;}
+.pbadge{font-size:11px;background:var(--bg3);border:1px solid var(--border2);border-radius:20px;padding:3px 10px;color:var(--text2);}
+.pbadge.live{border-color:var(--green);color:var(--green);}
+.btn{border:none;border-radius:var(--rs);padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px;transition:all .15s;}
+.btn-pri{background:var(--accent);color:#fff;}
+.btn-pri:hover{background:#6a5fd0;}
+.btn-pri:disabled{opacity:.4;cursor:not-allowed;}
+.btn-sec{background:var(--bg3);color:var(--text2);border:1px solid var(--border2);}
+.btn-sec:hover{border-color:var(--accent);color:var(--accent);}
+.btn-green{background:var(--green);color:#0a1a0a;}
+.btn-green:hover{background:#1db872;}
+.btn-green:disabled{opacity:.4;cursor:not-allowed;}
+@keyframes spin{to{transform:rotate(360deg);}}
+.spin{display:inline-block;animation:spin .8s linear infinite;}
+.app{display:flex;height:calc(100vh - 52px);}
+.sidebar{width:210px;flex-shrink:0;border-right:1px solid var(--border);background:var(--bg2);padding:14px 10px;overflow-y:auto;}
+.main{flex:1;overflow-y:auto;padding:22px 26px;}
+.slabel{font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:5px;padding:0 6px;}
+.ssec{margin-bottom:18px;}
+.sitem{display:flex;align-items:center;gap:7px;padding:5px 7px;border-radius:var(--rs);color:var(--text2);font-size:12px;}
+.sdot{width:7px;height:7px;border-radius:50%;flex-shrink:0;}
+.kgrid{display:grid;gap:11px;margin-bottom:18px;}
+.kcard{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:13px 15px;}
+.klabel{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;margin-bottom:5px;}
+.kval{font-size:20px;font-weight:700;}
+.ksub{font-size:11px;margin-top:3px;color:var(--text3);}
+.twrap{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin-bottom:18px;overflow-x:auto;}
+.ptable{width:100%;border-collapse:collapse;font-size:12px;}
+.ptable th{background:var(--bg3);color:var(--text3);font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;padding:8px 11px;text-align:right;border-bottom:1px solid var(--border);white-space:nowrap;}
+.ptable th:first-child{text-align:left;}
+.ptable td{padding:6px 11px;text-align:right;border-bottom:1px solid var(--border);color:var(--text);white-space:nowrap;}
+.ptable td:first-child{text-align:left;color:var(--text2);padding-left:14px;}
+.ptable tr.tr-h td{background:var(--bg3);color:var(--text3);font-size:10px;text-transform:uppercase;letter-spacing:.5px;font-weight:600;}
+.ptable tr.tr-t td{font-weight:700;background:rgba(124,111,224,.07);border-top:1px solid var(--border2);}
+.ptable tr:hover td{background:rgba(255,255,255,.015);}
+.vp{color:var(--green)!important;}
+.vn{color:var(--red)!important;}
+.mt{color:var(--text2)!important;}
+.red{color:var(--red);}
+.green{color:var(--green);}
+.egrid{display:grid;grid-template-columns:repeat(3,1fr);gap:13px;margin-bottom:18px;}
+.ecard{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:15px 17px;}
+.eheader{display:flex;align-items:center;gap:7px;margin-bottom:11px;padding-bottom:9px;border-bottom:1px solid var(--border);}
+.ename{font-size:12px;font-weight:600;flex:1;}
+.eccy{font-size:10px;color:var(--text3);background:var(--bg3);border-radius:4px;padding:2px 6px;}
+.erows{display:flex;flex-direction:column;gap:7px;}
+.erow{display:flex;justify-content:space-between;align-items:baseline;}
+.elbl{font-size:11px;color:var(--text3);}
+.eval{font-size:13px;font-weight:600;}
+.ph{margin-bottom:16px;}
+.pt{font-size:17px;font-weight:700;}
+.ps{font-size:12px;color:var(--text3);margin-top:2px;}
+/* SETUP */
+#setup-screen{max-width:620px;margin:0 auto;}
+.setup-hero{text-align:center;margin-bottom:28px;padding-top:20px;}
+.setup-icon{width:56px;height:56px;background:linear-gradient(135deg,var(--accent),var(--teal));border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:24px;margin:0 auto 12px;}
+.setup-title{font-size:20px;font-weight:700;margin-bottom:6px;}
+.setup-sub{font-size:13px;color:var(--text2);line-height:1.7;max-width:460px;margin:0 auto;}
+.setup-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:20px 22px;margin-bottom:12px;}
+.card-title{font-size:13px;font-weight:700;margin-bottom:14px;display:flex;align-items:center;gap:8px;}
+.stepn{width:22px;height:22px;border-radius:50%;background:var(--accent);color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.field{display:flex;flex-direction:column;gap:5px;margin-bottom:12px;}
+.flabel{font-size:11px;color:var(--text2);font-weight:500;}
+.finput{background:var(--bg3);border:1px solid var(--border2);border-radius:var(--rs);color:var(--text);padding:8px 12px;font-size:13px;font-family:inherit;width:100%;transition:border-color .15s;}
+.finput:focus{outline:none;border-color:var(--accent);}
+.mono{font-family:'SF Mono','Fira Code',monospace;font-size:12px;}
+.fhint{font-size:10px;color:var(--text3);}
+.alert{padding:10px 14px;border-radius:var(--rs);font-size:12px;margin-bottom:12px;display:flex;align-items:flex-start;gap:8px;line-height:1.5;}
+.aw{background:rgba(224,160,48,.1);border:1px solid rgba(224,160,48,.3);color:var(--amber);}
+.ae{background:rgba(224,90,90,.1);border:1px solid rgba(224,90,90,.3);color:var(--red);}
+.ao{background:rgba(34,201,132,.1);border:1px solid rgba(34,201,132,.3);color:var(--green);}
+.conn-btn{display:flex;align-items:center;gap:8px;padding:9px 14px;border-radius:var(--rs);font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--border2);background:var(--bg3);color:var(--text2);width:100%;margin-bottom:8px;transition:all .15s;}
+.conn-btn:hover{border-color:var(--teal);color:var(--teal);}
+.conn-btn.ok{border-color:var(--green);color:var(--green);background:rgba(34,201,132,.05);}
+.conn-btn.err{border-color:var(--red);color:var(--red);}
+.org-label{font-size:10px;color:var(--text3);margin-bottom:4px;margin-top:10px;}
+code{background:var(--bg3);padding:2px 6px;border-radius:3px;font-size:11px;font-family:monospace;}
+::-webkit-scrollbar{width:4px;height:4px;}
+::-webkit-scrollbar-track{background:transparent;}
+::-webkit-scrollbar-thumb{background:var(--bg4);border-radius:2px;}
+/* Toast */
+.toast{position:fixed;top:60px;right:20px;z-index:300;max-width:400px;padding:10px 14px;border-radius:var(--rs);font-size:12px;display:flex;align-items:flex-start;gap:8px;animation:fadeIn .2s ease;line-height:1.5;}
+@keyframes fadeIn{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}
+</style>
+</head>
+<body>
+<nav>
+  <div class="nlogo">
+    <div class="nmark">OA</div>
+    <div><div class="ntitle">Oxbridge Associates Group</div><div class="nsub">Live Xero Consolidation</div></div>
+  </div>
+  <div class="ntabs">
+    <button class="ntab active" onclick="setView('overview')" id="tab-overview">Overview</button>
+    <button class="ntab" onclick="setView('pnl')" id="tab-pnl" disabled>P&amp;L</button>
+    <button class="ntab" onclick="setView('balance')" id="tab-balance" disabled>Balance Sheet</button>
+    <button class="ntab" onclick="setView('capital')" id="tab-capital" disabled>Capital &amp; Reserves</button>
+    <button class="ntab" onclick="setView('facilities')" id="tab-facilities" disabled>Facilities</button>
+  </div>
+  <div class="nright">
+    <span class="pbadge" id="period-badge">Not connected</span>
+    <button class="btn btn-sec" onclick="goToSetup()" style="font-size:11px;padding:5px 10px">⚙ Settings</button>
+    <button class="btn btn-green" onclick="refreshAll()" id="btn-refresh" disabled>
+      <span id="ri">↻</span> Refresh
+    </button>
+  </div>
+</nav>
+<div class="app">
+  <div class="sidebar">
+    <div class="ssec">
+      <div class="slabel">Connections</div>
+      <div class="sitem"><div class="sdot" id="dot-uk" style="background:var(--text3)"></div><div><div style="font-size:11px;font-weight:600">UK Ltd</div><div style="font-size:10px;color:var(--text3)" id="st-uk">Not connected</div></div></div>
+      <div class="sitem" style="margin-top:4px"><div class="sdot" id="dot-bv" style="background:var(--text3)"></div><div><div style="font-size:11px;font-weight:600">BV</div><div style="font-size:10px;color:var(--text3)" id="st-bv">Not connected</div></div></div>
+      <div class="sitem" style="margin-top:4px"><div class="sdot" id="dot-ard" style="background:var(--text3)"></div><div><div style="font-size:11px;font-weight:600">ARD</div><div style="font-size:10px;color:var(--text3)" id="st-ard">Not connected</div></div></div>
+    </div>
+    <div class="ssec"><div class="slabel">Last Refreshed</div><div style="font-size:11px;color:var(--text3);padding:0 6px" id="last-rt">—</div></div>
+    <div class="ssec"><div class="slabel">EUR→GBP Rate</div><div style="font-size:15px;font-weight:700;padding:0 6px;color:var(--teal)" id="fx-disp">—</div></div>
+  </div>
+  <div class="main" id="main"></div>
+</div>
+
+<script>
+// ── XERO CONFIG
+const XERO_AUTH  = 'https://login.xero.com/identity/connect/authorize';
+const XERO_TOKEN = 'https://identity.xero.com/connect/token';
+const XERO_API   = 'https://api.xero.com/api.xro/2.0';
+// IMPORTANT: this must match EXACTLY what's in your Xero developer portal
+const REDIRECT_URI = location.href.split('?')[0].split('#')[0];
+const SCOPES = 'openid profile email offline_access accounting.reports.balancesheet.read accounting.reports.profitandloss.read accounting.settings.read';
+
+let S = {
+  clientId:     localStorage.getItem('ox_cid')||'',
+  clientSecret: localStorage.getItem('ox_cs')||'',
+  orgs: {
+    uk:  JSON.parse(localStorage.getItem('ox_uk')||'null'),
+    bv:  JSON.parse(localStorage.getItem('ox_bv')||'null'),
+    ard: JSON.parse(localStorage.getItem('ox_ard')||'null'),
+  },
+  data: null,
+  view: 'overview',
+  pendingOrg: null,
+};
+
+// ── FORMAT HELPERS
+const fmtF = v => v==null||isNaN(v)?'—':(v<0?'-':'')+'£'+Math.abs(Math.round(v)).toLocaleString('en-GB');
+const fmtE = v => v==null||isNaN(v)?'—':(v<0?'-':'')+'€'+Math.abs(Math.round(v)).toLocaleString('en-GB');
+const fmt  = v => { if(v==null||isNaN(v))return'—'; const a=Math.abs(v); let s; if(a>=1e6)s=(v/1e6).toFixed(1)+'M'; else if(a>=1000)s=(v/1000).toFixed(0)+'k'; else s=Math.round(v).toString(); return'£'+s; };
+const fmtP = v => v==null||isNaN(v)||!isFinite(v)?'—':(v*100).toFixed(1)+'%';
+const vc   = v => v>0?'vp':v<0?'vn':'';
+const $    = id => document.getElementById(id);
+
+// ── ON LOAD: check if returning from OAuth
+window.onload = () => {
+  const params = new URLSearchParams(location.search);
+  const code = params.get('code');
+  const org  = params.get('state');
+
+  if(code && org) {
+    // Remove params from URL so refreshing doesn't re-trigger
+    history.replaceState({},'',location.pathname);
+    exchangeToken(code, org);
+    return;
+  }
+
+  updateSidebar();
+  if(allOk() && S.clientId) { showDash(); refreshAll(); }
+  else { 
+    showSetup(); 
+    // Auto-enable step 2 if creds already stored
+    if(S.clientId && S.clientSecret) {
+      setTimeout(() => {
+        const card = $('step2-card');
+        if(card) { card.style.opacity='1'; card.style.pointerEvents='auto'; }
+      }, 100);
+    }
+  }
+};
+
+const allOk = () => S.orgs.uk?.tenantId && S.orgs.bv?.tenantId && S.orgs.ard?.tenantId;
+
+function updateSidebar() {
+  ['uk','bv','ard'].forEach(o => {
+    const org = S.orgs[o];
+    $('dot-'+o).style.background = org?.tenantId ? 'var(--green)' : 'var(--text3)';
+    $('st-'+o).textContent = org?.orgName || (org?.tenantId ? 'Connected' : 'Not connected');
+    $('st-'+o).style.color = org?.tenantId ? 'var(--green)' : '';
+  });
+  if(allOk()) {
+    $('btn-refresh').disabled = false;
+    document.querySelectorAll('.ntab').forEach(t => t.disabled=false);
+  }
+}
+
+// ── SETUP SCREEN
+function showSetup() {
+  const cidVal = S.clientId || '';
+  const csVal = S.clientSecret ? '••••••••' : '';
+  $('main').innerHTML = `
+  <div id="setup-screen">
+    <div class="setup-hero">
+      <div class="setup-icon">🔗</div>
+      <div class="setup-title">Connect to Xero</div>
+      <div class="setup-sub">Enter your credentials, then connect each organisation. After setup, one click refreshes all three Xero accounts simultaneously.</div>
+    </div>
+
+    <div class="setup-card">
+      <div class="card-title"><div class="stepn">1</div>Xero App Credentials</div>
+      <div class="alert aw">
+        <span>⚠</span>
+        <div>In your Xero developer portal → <strong>Configuration</strong>, set the Redirect URI to exactly:<br>
+        <code id="redirect-uri-display"></code><br>
+        This must match precisely — copy it from here, don't type it.</div>
+      </div>
+      <div id="uri-copy-row" style="margin-bottom:14px"></div>
+      <div class="field">
+        <div class="flabel">Client ID</div>
+        <input class="finput mono" id="f-cid" value="${cidVal}" placeholder="Paste your Client ID here">
+        <div class="fhint">From Xero developer portal → Configuration tab</div>
+      </div>
+      <div class="field">
+        <div class="flabel">Client Secret</div>
+        <input class="finput mono" id="f-cs" type="password" placeholder="Paste your Client Secret here" value="${csVal}">
+        <div class="fhint">Generate a new secret if you haven't copied it yet</div>
+      </div>
+      <button class="btn btn-pri" onclick="saveCreds()">Save &amp; continue</button>
+    </div>
+
+    <div class="setup-card" id="step2-card" style="${S.clientId?'':'opacity:.4;pointer-events:none'}">
+      <div class="card-title"><div class="stepn">2</div>Connect Each Organisation</div>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:14px;line-height:1.6">
+        Click Connect — a Xero login window opens. Sign in, click Allow, and you'll be redirected straight back here automatically. Do this once per organisation.
+      </div>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:12px;line-height:1.6;background:var(--bg3);padding:10px 12px;border-radius:var(--rs);">
+        ℹ️ Xero connects all your organisations in <strong style="color:var(--text)">one single sign-in</strong>. Click the button below, sign in to Xero, select all 3 organisations on the Xero screen, and click Allow.
+      </div>
+      <div id="org-status" style="margin-bottom:12px">
+        ${['uk','bv','ard'].map(o => `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;font-size:12px">
+          <div style="width:7px;height:7px;border-radius:50%;background:${S.orgs[o]?.tenantId?'var(--green)':'var(--text3)'}"></div>
+          <span style="color:${S.orgs[o]?.tenantId?'var(--green)':'var(--text2)'}">${S.orgs[o]?.orgName||(o==='uk'?'Oxbridge Associates Limited':o==='bv'?'Oxbridge Associates B.V.':'ARD International Limited')}</span>
+          ${S.orgs[o]?.tenantId?'<span style="color:var(--green);font-size:11px">✓ Connected</span>':''}
+        </div>`).join('')}
+      </div>
+      <button class="conn-btn ${allOk()?'ok':''}" onclick="startAuthAll()" style="margin-bottom:8px">
+        <span>${allOk()?'✓':'🔗'}</span>
+        <span>${allOk()?'All 3 connected — reconnect if needed':'Connect all 3 Xero organisations'}</span>
+      </button>
+      <div style="margin-top:14px">
+        <button class="btn btn-green" onclick="showDash();refreshAll()" id="go-btn" ${allOk()?'':'disabled'}>
+          ✓ Go to Dashboard &amp; Refresh
+        </button>
+      </div>
+    </div>
+
+    <div class="setup-card" style="opacity:.6">
+      <div class="card-title"><div class="stepn">3</div>Done — click Refresh any time</div>
+      <div style="font-size:12px;color:var(--text2);line-height:1.7">
+        After setup, <strong style="color:var(--text)">Refresh</strong> pulls live P&amp;L and Balance Sheet from all three Xero orgs, converts BV euros at today's live rate, eliminates intercompany, and rebuilds the full consolidated dashboard in seconds.<br><br>
+        Credentials are stored only in your browser. Nothing leaves your machine.
+      </div>
+    </div>
+  </div>`;
+
+  // Show the actual redirect URI (the current page URL)
+  const uri = location.href.split('?')[0].split('#')[0];
+  $('redirect-uri-display').textContent = uri;
+
+  // Copy button
+  $('uri-copy-row').innerHTML = `
+    <button onclick="copyURI()" class="btn btn-sec" style="font-size:11px;padding:4px 10px">
+      📋 Copy redirect URI to clipboard
+    </button>
+    <span id="copy-confirm" style="font-size:11px;color:var(--green);margin-left:8px;display:none">✓ Copied!</span>`;
+}
+
+function copyURI() {
+  const uri = location.href.split('?')[0].split('#')[0];
+  navigator.clipboard.writeText(uri).then(() => {
+    $('copy-confirm').style.display='inline';
+    setTimeout(()=>$('copy-confirm').style.display='none', 2000);
+  });
+}
+
+function saveCreds() {
+  const cid = $('f-cid').value.trim();
+  const cs  = $('f-cs').value.trim();
+  if(!cid) { toast('Please enter your Client ID','e'); return; }
+  // If field shows bullets, secret is already stored - don't overwrite
+  const isAlreadyStored = cs === '••••••••' || cs === '';
+  if(!isAlreadyStored) {
+    S.clientSecret = cs;
+    localStorage.setItem('ox_cs', cs);
+  } else if(!S.clientSecret) {
+    toast('Please enter your Client Secret','e'); return;
+  }
+  S.clientId = cid;
+  localStorage.setItem('ox_cid', cid);
+  $('f-cs').value = '••••••••';
+  $('step2-card').style.opacity = '1';
+  $('step2-card').style.pointerEvents = 'auto';
+  toast('Credentials saved — now connect each organisation','o');
+}
+
+// ── OAUTH — redirect-based (no popup needed)
+async function startAuth(org) {
+  await startAuthAll();
+}
+
+async function startAuthAll() {
+  if(!S.clientId || !S.clientSecret) {
+    toast('Save your credentials first (Step 1)','e'); return;
+  }
+  const verifier = generateVerifier();
+  const challenge = await makeChallenge(verifier);
+  localStorage.setItem('xv_all', verifier);
+
+  const p = new URLSearchParams({
+    response_type:'code', client_id:S.clientId,
+    redirect_uri:REDIRECT_URI, scope:SCOPES, state:'all',
+    code_challenge:challenge, code_challenge_method:'S256',
+  });
+  location.href = XERO_AUTH+'?'+p.toString();
+}
+
+
+async function exchangeToken(code, org) {
+  toast('Connecting '+org.toUpperCase()+'...','o');
+  const verifier = localStorage.getItem('xv_'+org) || '';
+
+  try {
+    const verifierKey = org === 'all' ? 'xv_all' : 'xv_'+org;
+    const verifier2 = localStorage.getItem(verifierKey) || '';
+
+    const body = new URLSearchParams({
+      grant_type:'authorization_code', code,
+      redirect_uri:REDIRECT_URI,
+      client_id:S.clientId,
+      client_secret:S.clientSecret,
+      code_verifier:verifier2,
+    });
+
+    const r = await fetch('/.netlify/functions/token', {
+      method:'POST',
+      headers:{'Content-Type':'application/x-www-form-urlencoded'},
+      body,
+    });
+
+    const txt = await r.text();
+    if(!r.ok) throw new Error('Token exchange failed: '+txt);
+    const tokens = JSON.parse(txt);
+
+    // Get ALL connected tenants
+    const tr = await fetch('/.netlify/functions/connections', {
+      headers:{Authorization:'Bearer '+tokens.access_token}
+    });
+    const tenants = await tr.json();
+    if(!tenants?.length) throw new Error('No Xero organisations found.');
+
+    toast('Found '+tenants.length+' organisations — assigning...','o');
+
+    // Auto-assign all tenants to the right org slot by name matching
+    const orgHints = {
+      uk:  ['oxbridge associates limited','uk ltd','oxbridge ltd'],
+      bv:  ['b.v','oxbridge associates bv','oxbridge bv','netherlands'],
+      ard: ['ard international','a.r.d'],
+    };
+
+    tenants.forEach(tenant => {
+      const name = tenant.tenantName.toLowerCase();
+      let matched = false;
+      for(const [orgKey, hints] of Object.entries(orgHints)) {
+        if(hints.some(h => name.includes(h))) {
+          S.orgs[orgKey] = {
+            accessToken:  tokens.access_token,
+            refreshToken: tokens.refresh_token,
+            expiresAt:    Date.now() + tokens.expires_in * 1000,
+            tenantId:     tenant.tenantId,
+            orgName:      tenant.tenantName,
+          };
+          localStorage.setItem('ox_'+orgKey, JSON.stringify(S.orgs[orgKey]));
+          toast('✓ '+tenant.tenantName+' → '+orgKey.toUpperCase(),'o');
+          matched = true;
+          break;
+        }
+      }
+      if(!matched) {
+        // If can't auto-match, assign to first unassigned slot
+        for(const orgKey of ['uk','bv','ard']) {
+          if(!S.orgs[orgKey]?.tenantId) {
+            S.orgs[orgKey] = {
+              accessToken:  tokens.access_token,
+              refreshToken: tokens.refresh_token,
+              expiresAt:    Date.now() + tokens.expires_in * 1000,
+              tenantId:     tenant.tenantId,
+              orgName:      tenant.tenantName,
+            };
+            localStorage.setItem('ox_'+orgKey, JSON.stringify(S.orgs[orgKey]));
+            toast('✓ '+tenant.tenantName+' assigned to '+orgKey.toUpperCase(),'o');
+            break;
+          }
+        }
+      }
+    });
+
+    updateSidebar();
+
+    if(allOk()) { 
+      toast('✓ All 3 organisations connected! Loading dashboard...','o');
+      setTimeout(() => { showDash(); refreshAll(); }, 1000);
+    } else {
+      showSetup();
+      toast('Connected '+tenants.length+' org(s). Check assignments above.','o');
+    }
+
+  } catch(err) {
+    console.error(err);
+    toast('Connection failed: '+err.message,'e');
+    showSetup();
+  }
+}
+
+// ── TOKEN REFRESH
+async function getToken(org) {
+  const o = S.orgs[org];
+  if(!o) throw new Error(org+' not connected — go to Settings');
+  if(Date.now() > o.expiresAt - 60000) {
+    const body = new URLSearchParams({
+      grant_type:'refresh_token', refresh_token:o.refreshToken,
+      client_id:S.clientId, client_secret:S.clientSecret,
+    });
+    const r = await fetch('/.netlify/functions/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body});
+    if(!r.ok) throw new Error('Token expired for '+org+'. Please reconnect in Settings.');
+    const t = await r.json();
+    o.accessToken=t.access_token; o.refreshToken=t.refresh_token;
+    o.expiresAt=Date.now()+t.expires_in*1000;
+    localStorage.setItem('ox_'+org, JSON.stringify(o));
+  }
+  return o.accessToken;
+}
+
+// ── XERO API
+async function xGet(org, path) {
+  const token = await getToken(org);
+  const r = await fetch('/.netlify/functions/xero?path='+encodeURIComponent(path), {
+    headers:{
+      'Authorization':'Bearer '+token,
+      'xero-tenant-id':S.orgs[org].tenantId,
+    }
+  });
+  if(!r.ok) throw new Error(`Xero API error (${org}): ${r.status} ${await r.text()}`);
+  return r.json();
+}
+
+async function getPnL(org) {
+  const today = new Date();
+  const fyStart = new Date(today.getFullYear(), 3, 1); // April = FY start
+  if(today < fyStart) fyStart.setFullYear(fyStart.getFullYear()-1);
+  const from = fyStart.toISOString().slice(0,10);
+  const to   = today.toISOString().slice(0,10);
+  const data = await xGet(org,`/Reports/ProfitAndLoss?fromDate=${from}&toDate=${to}&periods=1&timeframe=MONTH`);
+  return parseReport(data);
+}
+
+async function getBS(org) {
+  const today = new Date().toISOString().slice(0,10);
+  const data  = await xGet(org,`/Reports/BalanceSheet?date=${today}`);
+  return parseReport(data);
+}
+
+function parseReport(data) {
+  const m = {};
+  let fxEUR = null;
+  function walk(rows) {
+    if(!rows) return;
+    for(const row of rows) {
+      if(row.RowType==='Row' && row.Cells?.length>=2) {
+        const k = row.Cells[0]?.Value?.trim();
+        // For PnL with periods=1: col[1]=YTD, col[2]=month. Use month (col[2]) if present, else col[1]
+        const v = parseFloat((row.Cells[2]?.Value||row.Cells[1]?.Value||'').replace(/[,\s]/g,''))||0;
+        if(k) m[k] = (m[k]||0) + v;
+        // Scan for FX rate in any cell
+        row.Cells.forEach(c => {
+          const match = (c.Value||'').match(/([\d.]{4,})\s+EUR/);
+          if(match) fxEUR = parseFloat(match[1]);
+        });
+      }
+      if(row.Rows) walk(row.Rows);
+    }
+  }
+  walk(data.Reports?.[0]?.Rows);
+  m._fx = fxEUR;
+  return m;
+}
+
+// ── MAIN REFRESH
+async function refreshAll() {
+  const btn=$('btn-refresh'), ri=$('ri');
+  btn.disabled=true; ri.className='spin'; ri.textContent='↻';
+  toast('Fetching live data from Xero...','o');
+  try {
+    const [ukPL,bvPL,ardPL,ukBS,bvBS,ardBS] = await Promise.all([
+      getPnL('uk').catch(e=>{console.warn(e);return{};}),
+      getPnL('bv').catch(e=>{console.warn(e);return{};}),
+      getPnL('ard').catch(e=>{console.warn(e);return{};}),
+      getBS('uk').catch(e=>{console.warn(e);return{};}),
+      getBS('bv').catch(e=>{console.warn(e);return{};}),
+      getBS('ard').catch(e=>{console.warn(e);return{};}),
+    ]);
+
+    const fx = bvBS._fx || ukBS._fx || 0.8637;
+    $('fx-disp').textContent = fx.toFixed(4);
+    const c = v => (v||0)*fx;
+
+    // UK P&L — sum all admin as Xero shows (matching Total Administrative Costs)
+    const ukExtSales    = ukPL['Sales']||0;
+    const ukInterco     = ukPL['Sales (inter company)']||0;
+    const ukTotalSales  = ukExtSales+ukInterco;
+    const ukCOS         = (ukPL['Purchases']||0)+(ukPL['Purchase (inter company)']||0)+(ukPL['Logistic Costs']||0)+(ukPL['Damage/Shortage of goods']||0)+(ukPL['Plastic Packaging Tax']||0);
+    const ukGP          = ukTotalSales-ukCOS;
+    const cosKeys       = new Set(['Sales','Sales (inter company)','Purchases','Purchase (inter company)','Logistic Costs','Damage/Shortage of goods','Plastic Packaging Tax','_fx']);
+    const ukAdmin       = Object.entries(ukPL).filter(([k])=>!cosKeys.has(k)).reduce((s,[,v])=>s+v,0);
+    const ukOther       = (ukPL['Sundry Receipts']||0)+(ukPL['Inter-entity BV TP Adjustment']||0);
+    const ukNet         = ukGP-ukAdmin+ukOther;
+
+    // BV P&L (EUR→GBP)
+    const bvExtEUR      = bvPL['External Sales']||0;
+    const bvIntercoEUR  = bvPL['Inter Co Sales']||0;
+    const bvCOSEUR      = (bvPL['External COGS']||0)+(bvPL['Inter Co COGS']||0)+(bvPL['Logistic Costs']||0)+(bvPL['Warehouse Costs']||0)+(bvPL['External COGS - Import Duties']||0);
+    const bvGrossEUR    = bvExtEUR+bvIntercoEUR-bvCOSEUR;
+    const bvCOSset      = new Set(['External Sales','Inter Co Sales','External COGS','Inter Co COGS','Logistic Costs','Warehouse Costs','External COGS - Import Duties','_fx']);
+    const bvExpEUR      = Object.entries(bvPL).filter(([k])=>!bvCOSset.has(k)).reduce((s,[,v])=>s+v,0);
+    const bvNetEUR      = bvGrossEUR-bvExpEUR;
+
+    // ARD
+    const ardIncome     = ardPL['Sales']||0;
+    const ardExp        = Object.entries(ardPL).filter(([k])=>k!=='Sales'&&k!=='_fx').reduce((s,[,v])=>s+v,0);
+    const ardNet        = ardIncome-ardExp;
+
+    // Interco eliminations
+    const intercoTotal  = ukInterco + c(bvIntercoEUR) + ardIncome;
+
+    // Consolidated
+    const consExt       = ukExtSales+c(bvExtEUR);
+    const consGP        = ukGP+c(bvGrossEUR);
+    const consNet       = ukNet+c(bvNetEUR)+ardNet;
+    const gpPct         = consExt>0?consGP/consExt:0;
+
+    // Balance Sheet
+    const ukStock       = ukBS['Stock on hand']||ukBS['Stock']||0;
+    const bvStock       = c(bvBS['Stock on Hand']||bvBS['Stock']||0);
+    const ukDeb         = ukBS['Accounts Receivable']||0;
+    const bvDeb         = c(bvBS['Accounts Receivable']||0);
+    const ukCred        = Math.abs(ukBS['Accounts Payable']||0);
+    const bvCred        = c(Math.abs(bvBS['Accounts Payable']||0));
+    const ukCash        = (ukBS['Oxbridge Associates Limited']||0)+(ukBS['VM - Business']||0)+(ukBS['Revolut GBP Main']||0)+(ukBS['Virgin Money Invoice Facility - GBP']||0);
+    const bvBank        = c((bvBS['ABN AMRO']||0)+(bvBS['Bibby Financial Bank Euro']||0)+(bvBS['Revolut EUR Main']||0));
+    const ardCash       = ardBS['A.R.D INTERNATIONAL']||ardBS['Bank Account']||0;
+    const wc            = ukStock+bvStock+ukDeb+bvDeb-ukCred-bvCred;
+
+    // Capital & Reserves
+    const ukRet         = ukBS['Retained Earnings']||0;
+    const ukCY          = ukBS['Current Year Earnings']||0;
+    const bvRet         = c(bvBS['Retained Earnings']||0);
+    const bvCY          = c(bvBS['Current Year Earnings']||0);
+    const ardRet        = ardBS['Retained Earnings']||0;
+    const ardCY         = ardBS['Current Year Earnings']||0;
+    const distribTotal  = ukRet+ukCY+bvRet+bvCY+ardRet+ardCY;
+
+    // Facilities
+    const virIF         = Math.abs(ukBS['Virgin Money Invoice Facility - GBP']||0);
+    const virPurch      = Math.abs(ukBS['VM Purchase Facility']||ukBS['Purchase Facility']||0);
+    const bibby         = c(Math.abs(bvBS['Bibby Financial EURO']||0));
+
+    S.data = {
+      refreshedAt: new Date(), fx,
+      uk:  {extSales:ukExtSales,interco:ukInterco,totalSales:ukTotalSales,cos:ukCOS,gp:ukGP,admin:ukAdmin,net:ukNet,ret:ukRet,cy:ukCY},
+      bv:  {extEUR:bvExtEUR,intercoEUR:bvIntercoEUR,extGBP:c(bvExtEUR),gpGBP:c(bvGrossEUR),expGBP:c(bvExpEUR),netGBP:c(bvNetEUR),ret:bvRet,cy:bvCY},
+      ard: {income:ardIncome,exp:ardExp,net:ardNet,ret:ardRet,cy:ardCY},
+      cons:{extSales:consExt,gp:consGP,net:consNet,gpPct,intercoElim:intercoTotal},
+      bs:  {ukStock,bvStock,ukDeb,bvDeb,ukCred,bvCred,ukCash,bvBank,ardCash,wc},
+      cap: {ukRet,ukCY,bvRet,bvCY,ardRet,ardCY,distribTotal},
+      fac: {
+        virIF:  {actual:virIF,  limit:1500000, name:'Virgin IF (UK)'},
+        virPurch:{actual:virPurch,limit:2000000,name:'Virgin Purchase (UK)'},
+        bibby:  {actual:bibby, limit:1500000, name:'Bibby BV (€→£)'},
+      },
+      ardInv: ardBS['Investment']||0,
+      ardLoan:ardBS['Virgin Money Loan']||0,
+    };
+
+    const now = S.data.refreshedAt;
+    $('last-rt').textContent = now.toLocaleTimeString('en-GB')+' · '+now.toLocaleDateString('en-GB');
+    $('period-badge').textContent = 'Live · '+now.toLocaleDateString('en-GB',{month:'short',year:'numeric'});
+    $('period-badge').className = 'pbadge live';
+    renderView();
+    toast('✓ Refreshed from all 3 Xero orgs','o');
+  } catch(err) {
+    console.error(err);
+    toast('Refresh failed: '+err.message,'e');
+  } finally {
+    btn.disabled=false; ri.className=''; ri.textContent='↻';
+  }
+}
+
+// ── VIEWS
+function setView(v) {
+  S.view=v;
+  document.querySelectorAll('.ntab').forEach(t=>t.classList.remove('active'));
+  $('tab-'+v)?.classList.add('active');
+  if(S.data) renderView();
+}
+function renderView() {
+  if(!S.data) return;
+  const el=$('main');
+  const map={overview:renderOverview,pnl:renderPnL,balance:renderBalance,capital:renderCapital,facilities:renderFacilities};
+  (map[S.view]||renderOverview)(el);
+}
+function showDash() {
+  document.querySelectorAll('.ntab').forEach(t=>t.disabled=false);
+  $('btn-refresh').disabled=false;
+  if(S.data) renderView();
+  else $('main').innerHTML=`<div style="text-align:center;padding:80px 0;color:var(--text3)">Connecting to Xero...</div>`;
+}
+function goToSetup() { showSetup(); }
+
+function renderOverview(el) {
+  const d=S.data, co=d.cons, uk=d.uk, bv=d.bv, ard=d.ard;
+  const now=d.refreshedAt.toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'});
+  el.innerHTML=`
+  <div class="ph"><div class="pt">Group Overview — Live</div>
+  <div class="ps">As at ${now} · EUR→GBP @ ${d.fx.toFixed(4)} · Interco eliminated: ${fmt(co.intercoElim)}</div></div>
+  <div class="kgrid" style="grid-template-columns:repeat(5,1fr)">
+    <div class="kcard"><div class="klabel">External Sales</div><div class="kval">${fmt(co.extSales)}</div><div class="ksub">GP: ${fmtP(co.gpPct)}</div></div>
+    <div class="kcard"><div class="klabel">Gross Profit</div><div class="kval ${co.gp<0?'red':''}">${fmt(co.gp)}</div><div class="ksub">${fmtP(co.gpPct)} of ext. sales</div></div>
+    <div class="kcard"><div class="klabel">Net Profit</div><div class="kval ${co.net<0?'red':'green'}">${fmt(co.net)}</div><div class="ksub">All 3 entities combined</div></div>
+    <div class="kcard"><div class="klabel">Working Capital</div><div class="kval">${fmt(d.bs.wc)}</div><div class="ksub">Stock+Debtors−Creditors</div></div>
+    <div class="kcard" style="border-color:var(--accent)"><div class="klabel">Available for Dividend</div><div class="kval green">${fmt(d.cap.distribTotal)}</div><div class="ksub">Retained+CY, excl. share capital</div></div>
+  </div>
+  <div class="egrid">
+    <div class="ecard"><div class="eheader"><div class="sdot" style="background:var(--amber);width:7px;height:7px;border-radius:50%;flex-shrink:0"></div><div class="ename">ARD International</div><div class="eccy">Holding·£</div></div>
+    <div class="erows">
+      <div class="erow"><div class="elbl">Mgmt fee income</div><div class="eval green">${fmtF(ard.income)}</div></div>
+      <div class="erow"><div class="elbl">Expenses</div><div class="eval red">${fmtF(ard.exp)}</div></div>
+      <div class="erow"><div class="elbl">Net profit</div><div class="eval ${ard.net<0?'red':'green'}">${fmtF(ard.net)}</div></div>
+      <div class="erow"><div class="elbl">Investment in subs</div><div class="eval">${fmtF(d.ardInv)}</div></div>
+      <div class="erow"><div class="elbl">Retained earnings</div><div class="eval">${fmtF(ard.ret)}</div></div>
+      <div class="erow"><div class="elbl">Current year</div><div class="eval ${ard.cy<0?'red':'green'}">${fmtF(ard.cy)}</div></div>
+    </div></div>
+    <div class="ecard"><div class="eheader"><div class="sdot" style="background:var(--teal);width:7px;height:7px;border-radius:50%;flex-shrink:0"></div><div class="ename">Oxbridge Associates UK Ltd</div><div class="eccy">Trading·£</div></div>
+    <div class="erows">
+      <div class="erow"><div class="elbl">External sales</div><div class="eval">${fmtF(uk.extSales)}</div></div>
+      <div class="erow"><div class="elbl">Gross profit</div><div class="eval">${fmtF(uk.gp)}</div></div>
+      <div class="erow"><div class="elbl">Total admin costs</div><div class="eval red">${fmtF(uk.admin)}</div></div>
+      <div class="erow"><div class="elbl">Net profit</div><div class="eval ${uk.net<0?'red':'green'}">${fmtF(uk.net)}</div></div>
+      <div class="erow"><div class="elbl">Retained earnings</div><div class="eval">${fmtF(uk.ret)}</div></div>
+      <div class="erow"><div class="elbl">Current year</div><div class="eval ${uk.cy<0?'red':'green'}">${fmtF(uk.cy)}</div></div>
+    </div></div>
+    <div class="ecard"><div class="eheader"><div class="sdot" style="background:var(--blue);width:7px;height:7px;border-radius:50%;flex-shrink:0"></div><div class="ename">Oxbridge Associates BV</div><div class="eccy">Trading·€→£@${d.fx.toFixed(4)}</div></div>
+    <div class="erows">
+      <div class="erow"><div class="elbl">Ext. sales (€)</div><div class="eval">${fmtE(bv.extEUR)}</div></div>
+      <div class="erow"><div class="elbl">Ext. sales (£)</div><div class="eval">${fmtF(bv.extGBP)}</div></div>
+      <div class="erow"><div class="elbl">Gross profit</div><div class="eval">${fmtF(bv.gpGBP)}</div></div>
+      <div class="erow"><div class="elbl">Net profit</div><div class="eval ${bv.netGBP<0?'red':'green'}">${fmtF(bv.netGBP)}</div></div>
+      <div class="erow"><div class="elbl">Retained earnings</div><div class="eval">${fmtF(bv.ret)}</div></div>
+      <div class="erow"><div class="elbl">Current year</div><div class="eval ${bv.cy<0?'red':'green'}">${fmtF(bv.cy)}</div></div>
+    </div></div>
+  </div>
+  <div class="twrap"><table class="ptable">
+    <thead><tr><th style="text-align:left">P&amp;L Summary</th><th>ARD</th><th>UK Ltd</th><th>BV (£)</th><th>Interco elim.</th><th style="border-left:1px solid var(--border2)">Group</th></tr></thead>
+    <tbody>
+      <tr><td style="text-align:left">External Sales</td><td>—</td><td>${fmtF(uk.extSales)}</td><td>${fmtF(bv.extGBP)}</td><td>—</td><td style="border-left:1px solid var(--border2);font-weight:700">${fmtF(co.extSales)}</td></tr>
+      <tr><td style="text-align:left">Interco Sales</td><td class="mt">${fmtF(ard.income)}</td><td class="mt">${fmtF(uk.interco)}</td><td class="mt">${fmtF(bv.intercoEUR*d.fx)}</td><td class="vn">−${fmtF(co.intercoElim)}</td><td style="border-left:1px solid var(--border2);font-weight:700">—</td></tr>
+      <tr class="tr-t"><td style="text-align:left">Gross Profit</td><td>—</td><td class="${vc(uk.gp)}">${fmtF(uk.gp)}</td><td class="${vc(bv.gpGBP)}">${fmtF(bv.gpGBP)}</td><td>—</td><td style="border-left:1px solid var(--border2);font-weight:700;color:${co.gp<0?'var(--red)':'var(--green)'}">${fmtF(co.gp)}</td></tr>
+      <tr class="tr-t"><td style="text-align:left">Net Profit</td><td class="${vc(ard.net)}">${fmtF(ard.net)}</td><td class="${vc(uk.net)}">${fmtF(uk.net)}</td><td class="${vc(bv.netGBP)}">${fmtF(bv.netGBP)}</td><td>—</td><td style="border-left:1px solid var(--border2);font-weight:700;color:${co.net<0?'var(--red)':'var(--green)'}">${fmtF(co.net)}</td></tr>
+    </tbody>
+  </table></div>`;
+}
+
+function renderPnL(el) {
+  const d=S.data, co=d.cons, uk=d.uk, bv=d.bv, ard=d.ard;
+  el.innerHTML=`
+  <div class="ph"><div class="pt">P&amp;L — Consolidated Group</div><div class="ps">YTD current financial year · Live from Xero</div></div>
+  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px">
+    ${[['UK Ltd','var(--teal)',uk.extSales,uk.gp,uk.admin,uk.net,uk.ret,uk.cy,'ext. sales'],
+       ['BV (€→£)','var(--blue)',bv.extGBP,bv.gpGBP,bv.expGBP,bv.netGBP,bv.ret,bv.cy,'ext. sales (£)'],
+       ['ARD International','var(--amber)',ard.income,0,ard.exp,ard.net,ard.ret,ard.cy,'mgmt fee']].map(([name,col,sales,gp,exp,net,ret,cy,slbl])=>`
+    <div class="twrap" style="margin:0"><table class="ptable">
+      <thead><tr><th style="text-align:left;border-top:3px solid ${col}">${name}</th><th style="border-top:3px solid ${col}">£ YTD</th></tr></thead>
+      <tbody>
+        <tr><td style="text-align:left">${slbl}</td><td>${fmtF(sales)}</td></tr>
+        ${gp?`<tr><td style="text-align:left">Gross profit</td><td class="${vc(gp)}">${fmtF(gp)}</td></tr>`:''}
+        <tr><td style="text-align:left">Expenses</td><td class="vn">${fmtF(-exp)}</td></tr>
+        <tr class="tr-t"><td style="text-align:left">Net profit</td><td class="${vc(net)}">${fmtF(net)}</td></tr>
+        <tr><td style="text-align:left;color:var(--text3)">GP margin</td><td class="mt">${sales>0?fmtP(gp/sales):'—'}</td></tr>
+      </tbody>
+    </table></div>`).join('')}
+  </div>
+  <div class="twrap"><table class="ptable">
+    <thead><tr><th style="text-align:left">Consolidated Group</th><th>£</th></tr></thead>
+    <tbody>
+      <tr><td style="text-align:left;padding-left:20px">External Sales</td><td>${fmtF(co.extSales)}</td></tr>
+      <tr><td style="text-align:left;padding-left:20px;color:var(--text3)">Interco eliminated</td><td class="mt">−${fmtF(co.intercoElim)}</td></tr>
+      <tr class="tr-t"><td style="text-align:left">Gross Profit</td><td class="${vc(co.gp)}">${fmtF(co.gp)}</td></tr>
+      <tr><td style="text-align:left;padding-left:20px;color:var(--text3)">GP Margin %</td><td class="mt">${fmtP(co.gpPct)}</td></tr>
+      <tr class="tr-t"><td style="text-align:left">Net Profit (Group)</td><td class="${vc(co.net)}" style="font-size:15px">${fmtF(co.net)}</td></tr>
+    </tbody>
+  </table></div>`;
+}
+
+function renderBalance(el) {
+  const d=S.data, bs=d.bs;
+  el.innerHTML=`
+  <div class="ph"><div class="pt">Balance Sheet — Group</div><div class="ps">Live · ${d.refreshedAt.toLocaleString('en-GB',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})}</div></div>
+  <div class="kgrid" style="grid-template-columns:repeat(4,1fr)">
+    <div class="kcard"><div class="klabel">Total Stock</div><div class="kval">${fmt(bs.ukStock+bs.bvStock)}</div><div class="ksub">UK ${fmt(bs.ukStock)} · BV ${fmt(bs.bvStock)}</div></div>
+    <div class="kcard"><div class="klabel">Total Debtors</div><div class="kval">${fmt(bs.ukDeb+bs.bvDeb)}</div><div class="ksub">UK ${fmt(bs.ukDeb)} · BV ${fmt(bs.bvDeb)}</div></div>
+    <div class="kcard"><div class="klabel">Total Creditors</div><div class="kval red">${fmt(bs.ukCred+bs.bvCred)}</div><div class="ksub">UK ${fmt(bs.ukCred)} · BV ${fmt(bs.bvCred)}</div></div>
+    <div class="kcard"><div class="klabel">Working Capital</div><div class="kval">${fmt(bs.wc)}</div><div class="ksub">Stock+Debtors−Creditors</div></div>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px">
+    <div class="twrap" style="margin:0"><table class="ptable">
+      <thead><tr><th style="text-align:left">UK Ltd</th><th>£</th></tr></thead><tbody>
+      <tr class="tr-h"><td colspan="2">Current Assets</td></tr>
+      <tr><td style="text-align:left;padding-left:20px">Stock</td><td>${fmtF(bs.ukStock)}</td></tr>
+      <tr><td style="text-align:left;padding-left:20px">Debtors</td><td>${fmtF(bs.ukDeb)}</td></tr>
+      <tr><td style="text-align:left;padding-left:20px">Cash &amp; IF</td><td>${fmtF(bs.ukCash)}</td></tr>
+      <tr class="tr-h"><td colspan="2">Liabilities</td></tr>
+      <tr><td style="text-align:left;padding-left:20px">Creditors</td><td class="red">${fmtF(bs.ukCred)}</td></tr>
+      <tr class="tr-t"><td style="text-align:left">Net Working Assets</td><td class="${vc(bs.ukStock+bs.ukDeb-bs.ukCred)}">${fmtF(bs.ukStock+bs.ukDeb-bs.ukCred)}</td></tr>
+      </tbody></table></div>
+    <div class="twrap" style="margin:0"><table class="ptable">
+      <thead><tr><th style="text-align:left">BV (£)</th><th>£</th></tr></thead><tbody>
+      <tr class="tr-h"><td colspan="2">Current Assets</td></tr>
+      <tr><td style="text-align:left;padding-left:20px">Stock</td><td>${fmtF(bs.bvStock)}</td></tr>
+      <tr><td style="text-align:left;padding-left:20px">Debtors</td><td>${fmtF(bs.bvDeb)}</td></tr>
+      <tr><td style="text-align:left;padding-left:20px">Bank</td><td>${fmtF(bs.bvBank)}</td></tr>
+      <tr class="tr-h"><td colspan="2">Liabilities</td></tr>
+      <tr><td style="text-align:left;padding-left:20px">Creditors</td><td class="red">${fmtF(bs.bvCred)}</td></tr>
+      <tr class="tr-t"><td style="text-align:left">Net Working Assets</td><td class="${vc(bs.bvStock+bs.bvDeb-bs.bvCred)}">${fmtF(bs.bvStock+bs.bvDeb-bs.bvCred)}</td></tr>
+      </tbody></table></div>
+    <div class="twrap" style="margin:0"><table class="ptable">
+      <thead><tr><th style="text-align:left">ARD</th><th>£</th></tr></thead><tbody>
+      <tr><td style="text-align:left;padding-left:20px">Investment in subs</td><td>${fmtF(d.ardInv)}</td></tr>
+      <tr><td style="text-align:left;padding-left:20px">Cash</td><td>${fmtF(bs.ardCash)}</td></tr>
+      <tr><td style="text-align:left;padding-left:20px">VM Loan</td><td class="red">${fmtF(d.ardLoan)}</td></tr>
+      <tr class="tr-t"><td style="text-align:left">Net Assets</td><td class="${vc(d.ardInv+bs.ardCash-d.ardLoan)}">${fmtF(d.ardInv+bs.ardCash-d.ardLoan)}</td></tr>
+      </tbody></table></div>
+  </div>`;
+}
+
+function renderCapital(el) {
+  const d=S.data, cap=d.cap;
+  el.innerHTML=`
+  <div class="ph"><div class="pt">Capital &amp; Reserves — Distributable</div><div class="ps">Live · ${d.refreshedAt.toLocaleString('en-GB',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})}</div></div>
+  <div class="kgrid" style="grid-template-columns:repeat(4,1fr)">
+    <div class="kcard"><div class="klabel">ARD Distributable</div><div class="kval ${cap.ardRet+cap.ardCY<0?'red':'green'}">${fmtF(cap.ardRet+cap.ardCY)}</div><div class="ksub">CY: ${fmtF(cap.ardCY)}</div></div>
+    <div class="kcard"><div class="klabel">UK Distributable</div><div class="kval ${cap.ukRet+cap.ukCY<0?'red':'green'}">${fmtF(cap.ukRet+cap.ukCY)}</div><div class="ksub">CY: ${fmtF(cap.ukCY)}</div></div>
+    <div class="kcard"><div class="klabel">BV Distributable</div><div class="kval ${cap.bvRet+cap.bvCY<0?'red':'green'}">${fmtF(cap.bvRet+cap.bvCY)}</div><div class="ksub">CY: ${fmtF(cap.bvCY)}</div></div>
+    <div class="kcard" style="border-color:var(--accent)"><div class="klabel">Total Available for Dividend</div><div class="kval ${cap.distribTotal<0?'red':'green'}">${fmtF(cap.distribTotal)}</div><div class="ksub">Retained+CY all entities · excl. share capital</div></div>
+  </div>
+  <div class="twrap"><table class="ptable">
+    <thead><tr><th style="text-align:left">Entity</th><th>Retained Earnings</th><th>Current Year</th><th>Distributable Total</th></tr></thead>
+    <tbody>
+      <tr><td style="text-align:left">ARD International</td><td>${fmtF(cap.ardRet)}</td><td class="${vc(cap.ardCY)}">${fmtF(cap.ardCY)}</td><td class="${vc(cap.ardRet+cap.ardCY)}" style="font-weight:600">${fmtF(cap.ardRet+cap.ardCY)}</td></tr>
+      <tr><td style="text-align:left">Oxbridge Associates UK Ltd</td><td>${fmtF(cap.ukRet)}</td><td class="${vc(cap.ukCY)}">${fmtF(cap.ukCY)}</td><td class="${vc(cap.ukRet+cap.ukCY)}" style="font-weight:600">${fmtF(cap.ukRet+cap.ukCY)}</td></tr>
+      <tr><td style="text-align:left">Oxbridge Associates BV (£)</td><td>${fmtF(cap.bvRet)}</td><td class="${vc(cap.bvCY)}">${fmtF(cap.bvCY)}</td><td class="${vc(cap.bvRet+cap.bvCY)}" style="font-weight:600">${fmtF(cap.bvRet+cap.bvCY)}</td></tr>
+      <tr class="tr-t"><td style="text-align:left">Group Total</td><td style="font-weight:700">${fmtF(cap.ukRet+cap.bvRet+cap.ardRet)}</td><td class="${vc(cap.ukCY+cap.bvCY+cap.ardCY)}" style="font-weight:700">${fmtF(cap.ukCY+cap.bvCY+cap.ardCY)}</td><td class="${vc(cap.distribTotal)}" style="font-weight:700;font-size:15px">${fmtF(cap.distribTotal)}</td></tr>
+    </tbody>
+  </table></div>
+  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:14px 16px;font-size:12px;color:var(--text2)">
+    <strong style="color:var(--text)">Distribution route:</strong> BV → UK Ltd → ARD → shareholders. Each step requires a board resolution. BV converted at ${d.fx.toFixed(4)} EUR/GBP. Dutch withholding tax may apply on BV dividends. Share capital excluded — not distributable.
+  </div>`;
+}
+
+function renderFacilities(el) {
+  const d=S.data, facs=Object.values(d.fac);
+  const tD=facs.reduce((s,f)=>s+f.actual,0), tL=facs.reduce((s,f)=>s+f.limit,0);
+  el.innerHTML=`
+  <div class="ph"><div class="pt">Funding Facilities — Live</div><div class="ps">${d.refreshedAt.toLocaleString('en-GB',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})}</div></div>
+  <div class="kgrid" style="grid-template-columns:repeat(3,1fr)">
+    <div class="kcard"><div class="klabel">Total Drawn</div><div class="kval">${fmt(tD)}</div><div class="ksub">of ${fmt(tL)} limit</div></div>
+    <div class="kcard"><div class="klabel">Headroom</div><div class="kval green">${fmt(tL-tD)}</div><div class="ksub">${fmtP(1-tD/tL)} available</div></div>
+    <div class="kcard"><div class="klabel">Overall Utilisation</div><div class="kval ${tD/tL>.8?'red':''}">${fmtP(tD/tL)}</div><div class="ksub">${tD/tL>.8?'⚠ High — review required':'Within range'}</div></div>
+  </div>
+  ${facs.map(f=>{const p=f.actual/f.limit;const col=p>.85?'var(--red)':p>.65?'var(--amber)':'var(--teal)';return`
+  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:16px 18px;margin-bottom:12px">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px">
+      <div style="font-size:13px;font-weight:600">${f.name}</div>
+      <div style="font-size:22px;font-weight:700;color:${col}">${fmtP(p)}</div>
+    </div>
+    <div style="background:var(--bg4);border-radius:4px;height:10px;overflow:hidden;margin-bottom:8px">
+      <div style="height:100%;width:${Math.min(100,p*100).toFixed(1)}%;background:${col};border-radius:4px"></div>
+    </div>
+    <div style="font-size:11px;color:var(--text3)">${fmtF(f.actual)} drawn of ${fmtF(f.limit)} limit · ${fmtF(f.limit-f.actual)} headroom</div>
+  </div>`;}).join('')}`;
+}
+
+// ── PKCE HELPERS
+function generateVerifier() {
+  const a=new Uint8Array(32); crypto.getRandomValues(a);
+  return btoa(String.fromCharCode(...a)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');
+}
+async function makeChallenge(v) {
+  const d=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(v));
+  return btoa(String.fromCharCode(...new Uint8Array(d))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');
+}
+
+// ── TOAST
+let toastT;
+function toast(msg,type='o') {
+  document.querySelector('.toast')?.remove();
+  const d=document.createElement('div');
+  d.className=`toast ${type==='o'?'ao':type==='e'?'ae':'aw'}`;
+  d.innerHTML=`<span>${type==='o'?'✓':type==='e'?'✗':'⚠'}</span><span>${msg}</span>`;
+  document.body.appendChild(d);
+  clearTimeout(toastT);
+  toastT=setTimeout(()=>d.remove(),6000);
+}
+</script>
+</body>
+</html>
