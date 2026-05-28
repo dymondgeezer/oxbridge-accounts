@@ -1,4 +1,4 @@
-exports.handler = async (event) => {
+export const handler = async (event) => {
   const token = event.headers.authorization?.replace('Bearer ', '');
   const tenantId = event.headers['xero-tenant-id'];
   const path = event.queryStringParameters?.path || '';
@@ -11,14 +11,17 @@ exports.handler = async (event) => {
         Authorization: 'Bearer ' + token,
         'Xero-Tenant-Id': tenantId,
         Accept: 'application/json',
+        'Cache-Control': 'no-cache',
       }
     });
     const data = await response.text();
     return {
-      statusCode: response.status,
+      statusCode: 200,
       headers: {
         'Content-Type': 'application/json',
         'Access-Control-Allow-Origin': '*',
+        'Cache-Control': 'no-store, no-cache, must-revalidate',
+        'Pragma': 'no-cache',
       },
       body: data,
     };
