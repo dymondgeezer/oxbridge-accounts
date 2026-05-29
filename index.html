@@ -537,107 +537,100 @@ async function refreshAll() {
       getBS('ard').catch(e=>{console.warn('ARD BS:',e);return{};}),
     ]);
 
-    console.log('UK PL keys:', Object.keys(ukPL).filter(k=>!k.startsWith('_')));
-    console.log('BV PL keys:', Object.keys(bvPL).filter(k=>!k.startsWith('_')));
-    console.log('ARD PL keys:', Object.keys(ardPL).filter(k=>!k.startsWith('_')));
-    console.log('UK BS keys:', Object.keys(ukBS).filter(k=>!k.startsWith('_')));
-    console.log('ARD BS keys:', Object.keys(ardBS).filter(k=>!k.startsWith('_')));
+    // Log BV BS keys so we can fix capital field names
+    console.log('BV BS keys:', Object.keys(bvBS).filter(k=>!k.startsWith('_')));
+    console.log('ARD BS sample:', JSON.stringify(Object.fromEntries(Object.entries(ardBS).slice(0,20))));
 
     const fx = bvBS._fx || ukBS._fx || 0.8637;
     $('fx-disp').textContent = fx.toFixed(4);
     const c = v => (v||0)*fx;
 
-    // ── UK P&L
-    // COS items (explicit list)
-    const ukCOSkeys = new Set(['Purchases','Purchase (inter company)','Logistic Costs',
-      'Damage/Shortage of goods','Plastic Packaging Tax','Cost of Sales']);
-    // Sales items
-    const ukSalesKeys = new Set(['Sales','Sales (inter company)']);
-    // Other income (not admin)
-    const ukOtherIncomeKeys = new Set(['Sundry Receipts','Inter-entity BV TP Adjustment',
-      'Other Income','Total Other Income']);
-    // Below-line items to exclude from admin
-    const ukExcludeKeys = new Set([...ukCOSkeys,...ukSalesKeys,...ukOtherIncomeKeys,'_fx',
-      'Total Turnover','Total Cost of Sales','Gross Profit','Operating Profit',
-      'Profit on Ordinary Activities Before Taxation','Profit after Taxation',
-      'Total Administrative Costs','Total Other Income','Net Profit','EBITDA']);
-
+    // ── UK P&L (exact field names from Xero)
     const ukExtSales   = ukPL['Sales']||0;
     const ukInterco    = ukPL['Sales (inter company)']||0;
     const ukTotalSales = ukExtSales + ukInterco;
-    const ukCOS        = Object.entries(ukPL).filter(([k])=>ukCOSkeys.has(k)).reduce((s,[,v])=>s+v,0);
-    const ukGP         = ukTotalSales - ukCOS;
-    const ukAdmin      = Object.entries(ukPL).filter(([k])=>!ukExcludeKeys.has(k)).reduce((s,[,v])=>s+v,0);
-    const ukOther      = Object.entries(ukPL).filter(([k])=>ukOtherIncomeKeys.has(k)).reduce((s,[,v])=>s+v,0);
-    const ukNet        = ukGP - ukAdmin + ukOther;
 
-    // ── BV P&L (EUR→GBP)
-    const bvCOSkeys = new Set(['External COGS','Inter Co COGS','Logistic Costs',
-      'Warehouse Costs','External COGS - Import Duties','Labelling',
-      'Damage/Shortage of goods','Cost of Sales']);
-    const bvSalesKeys = new Set(['External Sales','Inter Co Sales','Total Sales']);
-    const bvExcludeKeys = new Set([...bvCOSkeys,...bvSalesKeys,'_fx',
-      'Total Cost of Sales','Gross Profit','Operating Profit','Net Profit',
-      'Total Expenses','Profit before tax','Profit after tax']);
+    const ukCOSkeys = new Set(['Purchases','Purchase (inter company)','Logistic Costs',
+      'Damage/Shortage of goods','Plastic Packaging Tax','Warehouse Costs']);
+    const ukCOS = Object.entries(ukPL)
+      .filter(([k])=>ukCOSkeys.has(k)).reduce((s,[,v])=>s+v,0);
+    const ukGP = ukTotalSales - ukCOS;
 
+    // Other income (above net profit line, not admin)
+    const ukOtherInc = (ukPL['Sundry Receipts']||0) + (ukPL['Inter-entity BV TP Adjustment']||0);
+
+    // Admin = everything except sales, COS, other income, totals, FX, Net Profit
+    const ukNonAdminKeys = new Set([...ukCOSkeys,
+      'Sales','Sales (inter company)',
+      'Sundry Receipts','Inter-entity BV TP Adjustment',
+      'Gross Profit','Net Profit','Foreign Currency Gains and Losses',
+      '_fx']);
+    const ukAdmin = Object.entries(ukPL)
+      .filter(([k])=>!ukNonAdminKeys.has(k)).reduce((s,[,v])=>s+v,0);
+    const ukNet = ukGP - ukAdmin + ukOtherInc;
+
+    // ── BV P&L (EUR, exact field names)
     const bvExtEUR     = bvPL['External Sales']||0;
     const bvIntercoEUR = bvPL['Inter Co Sales']||0;
-    const bvCOSEUR     = Object.entries(bvPL).filter(([k])=>bvCOSkeys.has(k)).reduce((s,[,v])=>s+v,0);
-    const bvGrossEUR   = bvExtEUR + bvIntercoEUR - bvCOSEUR;
-    const bvExpEUR     = Object.entries(bvPL).filter(([k])=>!bvExcludeKeys.has(k)).reduce((s,[,v])=>s+v,0);
-    const bvNetEUR     = bvGrossEUR - bvExpEUR;
+    const bvCOSkeys    = new Set(['External COGS','Inter Co COGS','Logistic Costs',
+      'Warehouse Costs','External COGS - Import Duties','Labelling','Damage/Shortage of goods']);
+    const bvCOSEUR  = Object.entries(bvPL).filter(([k])=>bvCOSkeys.has(k)).reduce((s,[,v])=>s+v,0);
+    const bvGrossEUR= bvExtEUR + bvIntercoEUR - bvCOSEUR;
+    const bvNonExpKeys = new Set([...bvCOSkeys,
+      'External Sales','Inter Co Sales',
+      'Gross Profit','Net Profit','_fx']);
+    const bvExpEUR  = Object.entries(bvPL).filter(([k])=>!bvNonExpKeys.has(k)).reduce((s,[,v])=>s+v,0);
+    const bvNetEUR  = bvGrossEUR - bvExpEUR;
 
-    // ── ARD P&L
-    // ARD only has Sales (mgmt fee) and expenses - don't sum Sales as expense
-    const ardSalesKeys = new Set(['Sales','Total Sales','Turnover','Total Turnover','Income']);
-    const ardExcludeKeys = new Set([...ardSalesKeys,'_fx','Gross Profit','Operating Profit',
-      'Net Profit','Total Expenses','Profit before tax','Profit after tax',
-      'Total Other Income','Total Administrative Costs']);
-    const ardIncome    = ardPL['Sales']||ardPL['Turnover']||ardPL['Income']||0;
-    const ardExp       = Object.entries(ardPL).filter(([k])=>!ardExcludeKeys.has(k)).reduce((s,[,v])=>s+v,0);
-    const ardNet       = ardIncome - ardExp;
+    // ── ARD P&L (exact field names)
+    const ardIncome  = ardPL['Sales']||0;
+    const ardCOSkeys = new Set(['Direct Wages']);
+    const ardCOS     = ardPL['Direct Wages']||0;
+    const ardGP      = ardIncome - ardCOS;
+    const ardNonAdminKeys = new Set(['Sales','Direct Wages','Gross Profit','Net Profit','_fx']);
+    const ardAdmin   = Object.entries(ardPL).filter(([k])=>!ardNonAdminKeys.has(k)).reduce((s,[,v])=>s+v,0);
+    const ardNet     = ardGP - ardAdmin;
 
-    // ── Interco eliminations
+    // ── Interco
     const intercoTotal = ukInterco + c(bvIntercoEUR) + ardIncome;
 
     // ── Consolidated
-    const consExt  = ukExtSales + c(bvExtEUR);
-    const consGP   = ukGP + c(bvGrossEUR);
-    const consNet  = ukNet + c(bvNetEUR) + ardNet;
-    const gpPct    = consExt>0 ? consGP/consExt : 0;
+    const consExt = ukExtSales + c(bvExtEUR);
+    const consGP  = ukGP + c(bvGrossEUR);
+    const consNet = ukNet + c(bvNetEUR) + ardNet;
+    const gpPct   = consExt>0 ? consGP/consExt : 0;
 
-    // ── Balance Sheet
-    const ukStock  = ukBS['Stock on hand']||ukBS['Stock']||ukBS['Inventories']||0;
-    const bvStock  = c(bvBS['Stock on Hand']||bvBS['Stock']||bvBS['Inventories']||0);
-    const ukDeb    = ukBS['Accounts Receivable']||ukBS['Trade Debtors']||ukBS['Debtors']||0;
-    const bvDeb    = c(bvBS['Accounts Receivable']||bvBS['Trade Debtors']||bvBS['Debtors']||0);
-    const ukCred   = Math.abs(ukBS['Accounts Payable']||ukBS['Trade Creditors']||ukBS['Creditors']||0);
-    const bvCred   = c(Math.abs(bvBS['Accounts Payable']||bvBS['Trade Creditors']||bvBS['Creditors']||0));
-    const ukCash   = (ukBS['Oxbridge Associates Limited']||0)+(ukBS['VM - Business']||0)+
-                     (ukBS['Revolut GBP Main']||0)+(ukBS['Virgin Money Invoice Facility - GBP']||0)+
-                     (ukBS['Current Account']||0);
-    const bvBank   = c((bvBS['ABN AMRO']||0)+(bvBS['Bibby Financial Bank Euro']||0)+
-                       (bvBS['Revolut EUR Main']||0)+(bvBS['Current Account']||0));
-    const ardCash  = ardBS['A.R.D INTERNATIONAL']||ardBS['Bank Account']||ardBS['Current Account']||ardBS['Cash']||0;
-    const wc       = ukStock+bvStock+ukDeb+bvDeb-ukCred-bvCred;
+    // ── Balance Sheet (exact UK field names confirmed)
+    const ukStock = (ukBS['Stock on hand']||0) + (ukBS['Inventory']||0);
+    const bvStock = c(bvBS['Stock on Hand']||bvBS['Stock']||bvBS['Inventories']||0);
+    const ukDeb   = ukBS['Accounts Receivable']||0;
+    const bvDeb   = c(bvBS['Accounts Receivable']||bvBS['Trade Debtors']||0);
+    const ukCred  = Math.abs(ukBS['Accounts Payable']||0);
+    const bvCred  = c(Math.abs(bvBS['Accounts Payable']||bvBS['Trade Creditors']||0));
+    const ukCash  = (ukBS['Oxbridge Associates Limited']||0)+(ukBS['VM - Business']||0)+
+                    (ukBS['Revolut GBP Main']||0);
+    const bvBank  = c((bvBS['ABN AMRO']||0)+(bvBS['Bibby Financial Bank Euro']||0)+
+                      (bvBS['Revolut EUR Main']||0));
+    const ardCash = ardBS['A.R.D INTERNATIONAL']||0;
+    const wc      = ukStock+bvStock+ukDeb+bvDeb-ukCred-bvCred;
 
-    // ── Capital & Reserves - try multiple field name variants
-    const getField = (obj, ...keys) => { for(const k of keys){ if(obj[k]!=null && obj[k]!==0) return obj[k]; } return 0; };
-    const ukRet  = getField(ukBS, 'Retained Earnings','Retained Earnings (Accumulated Surplus)','Accumulated Surplus');
-    const ukCY   = getField(ukBS, 'Current Year Earnings','Profit for the Year','Current Year Surplus','Net Profit');
-    const bvRet  = c(getField(bvBS, 'Retained Earnings','Accumulated Surplus'));
-    const bvCY   = c(getField(bvBS, 'Current Year Earnings','Profit for the Year','Current Year Surplus'));
-    const ardRet = getField(ardBS, 'Retained Earnings','Accumulated Surplus');
-    const ardCY  = getField(ardBS, 'Current Year Earnings','Profit for the Year','Current Year Surplus');
+    // ── Capital & Reserves (exact field names confirmed)
+    const ukRet  = ukBS['Retained Earnings']||0;
+    const ukCY   = ukBS['Current Year Earnings']||0;
+    const bvRet  = c(bvBS['Retained Earnings']||bvBS['Accumulated Surplus']||0);
+    const bvCY   = c(bvBS['Current Year Earnings']||bvBS['Profit for the Year']||0);
+    const ardRet = ardBS['Retained Earnings']||0;
+    const ardCY  = ardBS['Current Year Earnings']||0;
     const distribTotal = ukRet+ukCY+bvRet+bvCY+ardRet+ardCY;
 
-    console.log('Capital check - UK ret:', ukRet, 'cy:', ukCY);
-    console.log('Capital check - BV ret:', bvRet, 'cy:', bvCY);
-    console.log('Capital check - ARD ret:', ardRet, 'cy:', ardCY);
+    console.log('UK: sales='+ukExtSales.toFixed(0)+' gp='+ukGP.toFixed(0)+' admin='+ukAdmin.toFixed(0)+' net='+ukNet.toFixed(0));
+    console.log('BV: extEUR='+bvExtEUR.toFixed(0)+' grossEUR='+bvGrossEUR.toFixed(0)+' expEUR='+bvExpEUR.toFixed(0)+' netEUR='+bvNetEUR.toFixed(0));
+    console.log('ARD: income='+ardIncome+' cos='+ardCOS+' admin='+ardAdmin.toFixed(0)+' net='+ardNet.toFixed(0));
+    console.log('Cap: ukRet='+ukRet+' ukCY='+ukCY+' bvRet='+bvRet.toFixed(0)+' bvCY='+bvCY.toFixed(0)+' ardRet='+ardRet+' ardCY='+ardCY);
 
     // ── Facilities
-    const virIF    = Math.abs(ukBS['Virgin Money Invoice Facility - GBP']||ukBS['Invoice Facility']||0);
-    const virPurch = Math.abs(ukBS['VM Purchase Facility']||ukBS['Purchase Facility']||0);
+    const virIF    = Math.abs(ukBS['Virgin Money Invoice Facility - GBP']||0);
+    const virPurch = Math.abs(ukBS['VM Purchase Facility']||0);
     const bibby    = c(Math.abs(bvBS['Bibby Financial EURO']||bvBS['Bibby']||0));
 
     S.data = {
@@ -646,17 +639,17 @@ async function refreshAll() {
             cos:ukCOS,gp:ukGP,admin:ukAdmin,net:ukNet,ret:ukRet,cy:ukCY},
       bv:  {extEUR:bvExtEUR,intercoEUR:bvIntercoEUR,extGBP:c(bvExtEUR),
             gpGBP:c(bvGrossEUR),expGBP:c(bvExpEUR),netGBP:c(bvNetEUR),ret:bvRet,cy:bvCY},
-      ard: {income:ardIncome,exp:ardExp,net:ardNet,ret:ardRet,cy:ardCY},
+      ard: {income:ardIncome,exp:ardAdmin,net:ardNet,ret:ardRet,cy:ardCY},
       cons:{extSales:consExt,gp:consGP,net:consNet,gpPct,intercoElim:intercoTotal},
       bs:  {ukStock,bvStock,ukDeb,bvDeb,ukCred,bvCred,ukCash,bvBank,ardCash,wc},
       cap: {ukRet,ukCY,bvRet,bvCY,ardRet,ardCY,distribTotal},
       fac: {
-        virIF:   {actual:virIF,  limit:1500000, name:'Virgin IF (UK)'},
+        virIF:   {actual:virIF,  limit:1500000,name:'Virgin IF (UK)'},
         virPurch:{actual:virPurch,limit:2000000,name:'Virgin Purchase (UK)'},
-        bibby:   {actual:bibby,  limit:1500000, name:'Bibby BV (€→£)'},
+        bibby:   {actual:bibby,  limit:1500000,name:'Bibby BV (€→£)'},
       },
-      ardInv:  getField(ardBS,'Investment','Investment in Subsidiary','Investments'),
-      ardLoan: Math.abs(getField(ardBS,'Virgin Money Loan','Loan','Long Term Loans')),
+      ardInv:  ardBS['Investment']||0,
+      ardLoan: Math.abs(ardBS['Virgin Money Loan']||0),
     };
 
     const now = S.data.refreshedAt;
