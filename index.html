@@ -363,9 +363,14 @@ async function exchangeToken(code, org) {
       code_verifier:verifier2,
     });
 
-    const r = await fetch('/.netlify/functions/token', {
+    // Use Basic auth header as Xero requires for confidential clients
+    const basicAuth = btoa(S.clientId + ':' + S.clientSecret);
+    const r = await fetch('https://identity.xero.com/connect/token', {
       method:'POST',
-      headers:{'Content-Type':'application/x-www-form-urlencoded'},
+      headers:{
+        'Content-Type':'application/x-www-form-urlencoded',
+        'Authorization':'Basic ' + basicAuth,
+      },
       body,
     });
 
@@ -374,7 +379,7 @@ async function exchangeToken(code, org) {
     const tokens = JSON.parse(txt);
 
     // Get ALL connected tenants
-    const tr = await fetch('/.netlify/functions/connections', {
+    const tr = await fetch('https://api.xero.com/connections', {
       headers:{Authorization:'Bearer '+tokens.access_token}
     });
     const tenants = await tr.json();
@@ -452,7 +457,8 @@ async function getToken(org) {
       grant_type:'refresh_token', refresh_token:o.refreshToken,
       client_id:S.clientId, client_secret:S.clientSecret,
     });
-    const r = await fetch('/.netlify/functions/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body});
+    const basicAuth2 = btoa(S.clientId + ':' + S.clientSecret);
+    const r = await fetch('https://identity.xero.com/connect/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded','Authorization':'Basic '+basicAuth2},body});
     if(!r.ok) throw new Error('Token expired for '+org+'. Please reconnect in Settings.');
     const t = await r.json();
     o.accessToken=t.access_token; o.refreshToken=t.refresh_token;
@@ -465,10 +471,11 @@ async function getToken(org) {
 // ── XERO API
 async function xGet(org, path) {
   const token = await getToken(org);
-  const r = await fetch('/.netlify/functions/xero?path='+encodeURIComponent(path), {
+  const r = await fetch('https://api.xero.com/api.xro/2.0'+path, {
     headers:{
       'Authorization':'Bearer '+token,
-      'xero-tenant-id':S.orgs[org].tenantId,
+      'Xero-Tenant-Id':S.orgs[org].tenantId,
+      'Accept':'application/json',
     }
   });
   if(!r.ok) throw new Error(`Xero API error (${org}): ${r.status} ${await r.text()}`);
@@ -481,7 +488,7 @@ async function getPnL(org) {
   if(today < fyStart) fyStart.setFullYear(fyStart.getFullYear()-1);
   const from = fyStart.toISOString().slice(0,10);
   const to   = today.toISOString().slice(0,10);
-  const data = await xGet(org,`/Reports/ProfitAndLoss?fromDate=${from}&toDate=${to}&periods=1&timeframe=MONTH`);
+  const data = await xGet(org,`/Reports/ProfitAndLoss?fromDate=${from}&toDate=${to}`);
   return parseReport(data);
 }
 
@@ -523,93 +530,134 @@ async function refreshAll() {
   toast('Fetching live data from Xero...','o');
   try {
     const [ukPL,bvPL,ardPL,ukBS,bvBS,ardBS] = await Promise.all([
-      getPnL('uk').catch(e=>{console.warn(e);return{};}),
-      getPnL('bv').catch(e=>{console.warn(e);return{};}),
-      getPnL('ard').catch(e=>{console.warn(e);return{};}),
-      getBS('uk').catch(e=>{console.warn(e);return{};}),
-      getBS('bv').catch(e=>{console.warn(e);return{};}),
-      getBS('ard').catch(e=>{console.warn(e);return{};}),
+      getPnL('uk').catch(e=>{console.warn('UK PL:',e);return{};}),
+      getPnL('bv').catch(e=>{console.warn('BV PL:',e);return{};}),
+      getPnL('ard').catch(e=>{console.warn('ARD PL:',e);return{};}),
+      getBS('uk').catch(e=>{console.warn('UK BS:',e);return{};}),
+      getBS('bv').catch(e=>{console.warn('BV BS:',e);return{};}),
+      getBS('ard').catch(e=>{console.warn('ARD BS:',e);return{};}),
     ]);
+
+    console.log('UK PL keys:', Object.keys(ukPL).filter(k=>!k.startsWith('_')));
+    console.log('BV PL keys:', Object.keys(bvPL).filter(k=>!k.startsWith('_')));
+    console.log('ARD PL keys:', Object.keys(ardPL).filter(k=>!k.startsWith('_')));
+    console.log('UK BS keys:', Object.keys(ukBS).filter(k=>!k.startsWith('_')));
+    console.log('ARD BS keys:', Object.keys(ardBS).filter(k=>!k.startsWith('_')));
 
     const fx = bvBS._fx || ukBS._fx || 0.8637;
     $('fx-disp').textContent = fx.toFixed(4);
     const c = v => (v||0)*fx;
 
-    // UK P&L — sum all admin as Xero shows (matching Total Administrative Costs)
-    const ukExtSales    = ukPL['Sales']||0;
-    const ukInterco     = ukPL['Sales (inter company)']||0;
-    const ukTotalSales  = ukExtSales+ukInterco;
-    const ukCOS         = (ukPL['Purchases']||0)+(ukPL['Purchase (inter company)']||0)+(ukPL['Logistic Costs']||0)+(ukPL['Damage/Shortage of goods']||0)+(ukPL['Plastic Packaging Tax']||0);
-    const ukGP          = ukTotalSales-ukCOS;
-    const cosKeys       = new Set(['Sales','Sales (inter company)','Purchases','Purchase (inter company)','Logistic Costs','Damage/Shortage of goods','Plastic Packaging Tax','_fx']);
-    const ukAdmin       = Object.entries(ukPL).filter(([k])=>!cosKeys.has(k)).reduce((s,[,v])=>s+v,0);
-    const ukOther       = (ukPL['Sundry Receipts']||0)+(ukPL['Inter-entity BV TP Adjustment']||0);
-    const ukNet         = ukGP-ukAdmin+ukOther;
+    // ── UK P&L
+    // COS items (explicit list)
+    const ukCOSkeys = new Set(['Purchases','Purchase (inter company)','Logistic Costs',
+      'Damage/Shortage of goods','Plastic Packaging Tax','Cost of Sales']);
+    // Sales items
+    const ukSalesKeys = new Set(['Sales','Sales (inter company)']);
+    // Other income (not admin)
+    const ukOtherIncomeKeys = new Set(['Sundry Receipts','Inter-entity BV TP Adjustment',
+      'Other Income','Total Other Income']);
+    // Below-line items to exclude from admin
+    const ukExcludeKeys = new Set([...ukCOSkeys,...ukSalesKeys,...ukOtherIncomeKeys,'_fx',
+      'Total Turnover','Total Cost of Sales','Gross Profit','Operating Profit',
+      'Profit on Ordinary Activities Before Taxation','Profit after Taxation',
+      'Total Administrative Costs','Total Other Income','Net Profit','EBITDA']);
 
-    // BV P&L (EUR→GBP)
-    const bvExtEUR      = bvPL['External Sales']||0;
-    const bvIntercoEUR  = bvPL['Inter Co Sales']||0;
-    const bvCOSEUR      = (bvPL['External COGS']||0)+(bvPL['Inter Co COGS']||0)+(bvPL['Logistic Costs']||0)+(bvPL['Warehouse Costs']||0)+(bvPL['External COGS - Import Duties']||0);
-    const bvGrossEUR    = bvExtEUR+bvIntercoEUR-bvCOSEUR;
-    const bvCOSset      = new Set(['External Sales','Inter Co Sales','External COGS','Inter Co COGS','Logistic Costs','Warehouse Costs','External COGS - Import Duties','_fx']);
-    const bvExpEUR      = Object.entries(bvPL).filter(([k])=>!bvCOSset.has(k)).reduce((s,[,v])=>s+v,0);
-    const bvNetEUR      = bvGrossEUR-bvExpEUR;
+    const ukExtSales   = ukPL['Sales']||0;
+    const ukInterco    = ukPL['Sales (inter company)']||0;
+    const ukTotalSales = ukExtSales + ukInterco;
+    const ukCOS        = Object.entries(ukPL).filter(([k])=>ukCOSkeys.has(k)).reduce((s,[,v])=>s+v,0);
+    const ukGP         = ukTotalSales - ukCOS;
+    const ukAdmin      = Object.entries(ukPL).filter(([k])=>!ukExcludeKeys.has(k)).reduce((s,[,v])=>s+v,0);
+    const ukOther      = Object.entries(ukPL).filter(([k])=>ukOtherIncomeKeys.has(k)).reduce((s,[,v])=>s+v,0);
+    const ukNet        = ukGP - ukAdmin + ukOther;
 
-    // ARD
-    const ardIncome     = ardPL['Sales']||0;
-    const ardExp        = Object.entries(ardPL).filter(([k])=>k!=='Sales'&&k!=='_fx').reduce((s,[,v])=>s+v,0);
-    const ardNet        = ardIncome-ardExp;
+    // ── BV P&L (EUR→GBP)
+    const bvCOSkeys = new Set(['External COGS','Inter Co COGS','Logistic Costs',
+      'Warehouse Costs','External COGS - Import Duties','Labelling',
+      'Damage/Shortage of goods','Cost of Sales']);
+    const bvSalesKeys = new Set(['External Sales','Inter Co Sales','Total Sales']);
+    const bvExcludeKeys = new Set([...bvCOSkeys,...bvSalesKeys,'_fx',
+      'Total Cost of Sales','Gross Profit','Operating Profit','Net Profit',
+      'Total Expenses','Profit before tax','Profit after tax']);
 
-    // Interco eliminations
-    const intercoTotal  = ukInterco + c(bvIntercoEUR) + ardIncome;
+    const bvExtEUR     = bvPL['External Sales']||0;
+    const bvIntercoEUR = bvPL['Inter Co Sales']||0;
+    const bvCOSEUR     = Object.entries(bvPL).filter(([k])=>bvCOSkeys.has(k)).reduce((s,[,v])=>s+v,0);
+    const bvGrossEUR   = bvExtEUR + bvIntercoEUR - bvCOSEUR;
+    const bvExpEUR     = Object.entries(bvPL).filter(([k])=>!bvExcludeKeys.has(k)).reduce((s,[,v])=>s+v,0);
+    const bvNetEUR     = bvGrossEUR - bvExpEUR;
 
-    // Consolidated
-    const consExt       = ukExtSales+c(bvExtEUR);
-    const consGP        = ukGP+c(bvGrossEUR);
-    const consNet       = ukNet+c(bvNetEUR)+ardNet;
-    const gpPct         = consExt>0?consGP/consExt:0;
+    // ── ARD P&L
+    // ARD only has Sales (mgmt fee) and expenses - don't sum Sales as expense
+    const ardSalesKeys = new Set(['Sales','Total Sales','Turnover','Total Turnover','Income']);
+    const ardExcludeKeys = new Set([...ardSalesKeys,'_fx','Gross Profit','Operating Profit',
+      'Net Profit','Total Expenses','Profit before tax','Profit after tax',
+      'Total Other Income','Total Administrative Costs']);
+    const ardIncome    = ardPL['Sales']||ardPL['Turnover']||ardPL['Income']||0;
+    const ardExp       = Object.entries(ardPL).filter(([k])=>!ardExcludeKeys.has(k)).reduce((s,[,v])=>s+v,0);
+    const ardNet       = ardIncome - ardExp;
 
-    // Balance Sheet
-    const ukStock       = ukBS['Stock on hand']||ukBS['Stock']||0;
-    const bvStock       = c(bvBS['Stock on Hand']||bvBS['Stock']||0);
-    const ukDeb         = ukBS['Accounts Receivable']||0;
-    const bvDeb         = c(bvBS['Accounts Receivable']||0);
-    const ukCred        = Math.abs(ukBS['Accounts Payable']||0);
-    const bvCred        = c(Math.abs(bvBS['Accounts Payable']||0));
-    const ukCash        = (ukBS['Oxbridge Associates Limited']||0)+(ukBS['VM - Business']||0)+(ukBS['Revolut GBP Main']||0)+(ukBS['Virgin Money Invoice Facility - GBP']||0);
-    const bvBank        = c((bvBS['ABN AMRO']||0)+(bvBS['Bibby Financial Bank Euro']||0)+(bvBS['Revolut EUR Main']||0));
-    const ardCash       = ardBS['A.R.D INTERNATIONAL']||ardBS['Bank Account']||0;
-    const wc            = ukStock+bvStock+ukDeb+bvDeb-ukCred-bvCred;
+    // ── Interco eliminations
+    const intercoTotal = ukInterco + c(bvIntercoEUR) + ardIncome;
 
-    // Capital & Reserves
-    const ukRet         = ukBS['Retained Earnings']||0;
-    const ukCY          = ukBS['Current Year Earnings']||0;
-    const bvRet         = c(bvBS['Retained Earnings']||0);
-    const bvCY          = c(bvBS['Current Year Earnings']||0);
-    const ardRet        = ardBS['Retained Earnings']||0;
-    const ardCY         = ardBS['Current Year Earnings']||0;
-    const distribTotal  = ukRet+ukCY+bvRet+bvCY+ardRet+ardCY;
+    // ── Consolidated
+    const consExt  = ukExtSales + c(bvExtEUR);
+    const consGP   = ukGP + c(bvGrossEUR);
+    const consNet  = ukNet + c(bvNetEUR) + ardNet;
+    const gpPct    = consExt>0 ? consGP/consExt : 0;
 
-    // Facilities
-    const virIF         = Math.abs(ukBS['Virgin Money Invoice Facility - GBP']||0);
-    const virPurch      = Math.abs(ukBS['VM Purchase Facility']||ukBS['Purchase Facility']||0);
-    const bibby         = c(Math.abs(bvBS['Bibby Financial EURO']||0));
+    // ── Balance Sheet
+    const ukStock  = ukBS['Stock on hand']||ukBS['Stock']||ukBS['Inventories']||0;
+    const bvStock  = c(bvBS['Stock on Hand']||bvBS['Stock']||bvBS['Inventories']||0);
+    const ukDeb    = ukBS['Accounts Receivable']||ukBS['Trade Debtors']||ukBS['Debtors']||0;
+    const bvDeb    = c(bvBS['Accounts Receivable']||bvBS['Trade Debtors']||bvBS['Debtors']||0);
+    const ukCred   = Math.abs(ukBS['Accounts Payable']||ukBS['Trade Creditors']||ukBS['Creditors']||0);
+    const bvCred   = c(Math.abs(bvBS['Accounts Payable']||bvBS['Trade Creditors']||bvBS['Creditors']||0));
+    const ukCash   = (ukBS['Oxbridge Associates Limited']||0)+(ukBS['VM - Business']||0)+
+                     (ukBS['Revolut GBP Main']||0)+(ukBS['Virgin Money Invoice Facility - GBP']||0)+
+                     (ukBS['Current Account']||0);
+    const bvBank   = c((bvBS['ABN AMRO']||0)+(bvBS['Bibby Financial Bank Euro']||0)+
+                       (bvBS['Revolut EUR Main']||0)+(bvBS['Current Account']||0));
+    const ardCash  = ardBS['A.R.D INTERNATIONAL']||ardBS['Bank Account']||ardBS['Current Account']||ardBS['Cash']||0;
+    const wc       = ukStock+bvStock+ukDeb+bvDeb-ukCred-bvCred;
+
+    // ── Capital & Reserves - try multiple field name variants
+    const getField = (obj, ...keys) => { for(const k of keys){ if(obj[k]!=null && obj[k]!==0) return obj[k]; } return 0; };
+    const ukRet  = getField(ukBS, 'Retained Earnings','Retained Earnings (Accumulated Surplus)','Accumulated Surplus');
+    const ukCY   = getField(ukBS, 'Current Year Earnings','Profit for the Year','Current Year Surplus','Net Profit');
+    const bvRet  = c(getField(bvBS, 'Retained Earnings','Accumulated Surplus'));
+    const bvCY   = c(getField(bvBS, 'Current Year Earnings','Profit for the Year','Current Year Surplus'));
+    const ardRet = getField(ardBS, 'Retained Earnings','Accumulated Surplus');
+    const ardCY  = getField(ardBS, 'Current Year Earnings','Profit for the Year','Current Year Surplus');
+    const distribTotal = ukRet+ukCY+bvRet+bvCY+ardRet+ardCY;
+
+    console.log('Capital check - UK ret:', ukRet, 'cy:', ukCY);
+    console.log('Capital check - BV ret:', bvRet, 'cy:', bvCY);
+    console.log('Capital check - ARD ret:', ardRet, 'cy:', ardCY);
+
+    // ── Facilities
+    const virIF    = Math.abs(ukBS['Virgin Money Invoice Facility - GBP']||ukBS['Invoice Facility']||0);
+    const virPurch = Math.abs(ukBS['VM Purchase Facility']||ukBS['Purchase Facility']||0);
+    const bibby    = c(Math.abs(bvBS['Bibby Financial EURO']||bvBS['Bibby']||0));
 
     S.data = {
       refreshedAt: new Date(), fx,
-      uk:  {extSales:ukExtSales,interco:ukInterco,totalSales:ukTotalSales,cos:ukCOS,gp:ukGP,admin:ukAdmin,net:ukNet,ret:ukRet,cy:ukCY},
-      bv:  {extEUR:bvExtEUR,intercoEUR:bvIntercoEUR,extGBP:c(bvExtEUR),gpGBP:c(bvGrossEUR),expGBP:c(bvExpEUR),netGBP:c(bvNetEUR),ret:bvRet,cy:bvCY},
+      uk:  {extSales:ukExtSales,interco:ukInterco,totalSales:ukTotalSales,
+            cos:ukCOS,gp:ukGP,admin:ukAdmin,net:ukNet,ret:ukRet,cy:ukCY},
+      bv:  {extEUR:bvExtEUR,intercoEUR:bvIntercoEUR,extGBP:c(bvExtEUR),
+            gpGBP:c(bvGrossEUR),expGBP:c(bvExpEUR),netGBP:c(bvNetEUR),ret:bvRet,cy:bvCY},
       ard: {income:ardIncome,exp:ardExp,net:ardNet,ret:ardRet,cy:ardCY},
       cons:{extSales:consExt,gp:consGP,net:consNet,gpPct,intercoElim:intercoTotal},
       bs:  {ukStock,bvStock,ukDeb,bvDeb,ukCred,bvCred,ukCash,bvBank,ardCash,wc},
       cap: {ukRet,ukCY,bvRet,bvCY,ardRet,ardCY,distribTotal},
       fac: {
-        virIF:  {actual:virIF,  limit:1500000, name:'Virgin IF (UK)'},
+        virIF:   {actual:virIF,  limit:1500000, name:'Virgin IF (UK)'},
         virPurch:{actual:virPurch,limit:2000000,name:'Virgin Purchase (UK)'},
-        bibby:  {actual:bibby, limit:1500000, name:'Bibby BV (€→£)'},
+        bibby:   {actual:bibby,  limit:1500000, name:'Bibby BV (€→£)'},
       },
-      ardInv: ardBS['Investment']||0,
-      ardLoan:ardBS['Virgin Money Loan']||0,
+      ardInv:  getField(ardBS,'Investment','Investment in Subsidiary','Investments'),
+      ardLoan: Math.abs(getField(ardBS,'Virgin Money Loan','Loan','Long Term Loans')),
     };
 
     const now = S.data.refreshedAt;
@@ -617,7 +665,8 @@ async function refreshAll() {
     $('period-badge').textContent = 'Live · '+now.toLocaleDateString('en-GB',{month:'short',year:'numeric'});
     $('period-badge').className = 'pbadge live';
     renderView();
-    toast('✓ Refreshed from all 3 Xero orgs','o');
+    toast('✓ ✓ Refreshed from all 3 Xero orgs','o');
+
   } catch(err) {
     console.error(err);
     toast('Refresh failed: '+err.message,'e');
@@ -625,6 +674,7 @@ async function refreshAll() {
     btn.disabled=false; ri.className=''; ri.textContent='↻';
   }
 }
+
 
 // ── VIEWS
 function setView(v) {
