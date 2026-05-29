@@ -365,7 +365,7 @@ async function exchangeToken(code, org) {
 
     // Use Basic auth header as Xero requires for confidential clients
     const basicAuth = btoa(S.clientId + ':' + S.clientSecret);
-    const r = await fetch('https://identity.xero.com/connect/token', {
+    const r = await fetch('/.netlify/functions/token', {
       method:'POST',
       headers:{
         'Content-Type':'application/x-www-form-urlencoded',
@@ -379,7 +379,7 @@ async function exchangeToken(code, org) {
     const tokens = JSON.parse(txt);
 
     // Get ALL connected tenants
-    const tr = await fetch('https://api.xero.com/connections', {
+    const tr = await fetch('/.netlify/functions/connections', {
       headers:{Authorization:'Bearer '+tokens.access_token}
     });
     const tenants = await tr.json();
@@ -458,7 +458,7 @@ async function getToken(org) {
       client_id:S.clientId, client_secret:S.clientSecret,
     });
     const basicAuth2 = btoa(S.clientId + ':' + S.clientSecret);
-    const r = await fetch('https://identity.xero.com/connect/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded','Authorization':'Basic '+basicAuth2},body});
+    const r = await fetch('/.netlify/functions/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded','Authorization':'Basic '+basicAuth2},body});
     if(!r.ok) throw new Error('Token expired for '+org+'. Please reconnect in Settings.');
     const t = await r.json();
     o.accessToken=t.access_token; o.refreshToken=t.refresh_token;
