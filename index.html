@@ -471,11 +471,10 @@ async function getToken(org) {
 // ── XERO API
 async function xGet(org, path) {
   const token = await getToken(org);
-  const r = await fetch('https://api.xero.com/api.xro/2.0'+path, {
+  const r = await fetch('/.netlify/functions/xero?path='+encodeURIComponent(path), {
     headers:{
       'Authorization':'Bearer '+token,
-      'Xero-Tenant-Id':S.orgs[org].tenantId,
-      'Accept':'application/json',
+      'xero-tenant-id':S.orgs[org].tenantId,
     }
   });
   if(!r.ok) throw new Error(`Xero API error (${org}): ${r.status} ${await r.text()}`);
