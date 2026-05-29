@@ -543,7 +543,7 @@ function parseReport(data) {
       if(row.RowType==='Row' && row.Cells?.length>=2) {
         const k = row.Cells[0]?.Value?.trim();
         // For PnL with periods=1: col[1]=YTD, col[2]=month. Use month (col[2]) if present, else col[1]
-        const v = parseFloat((row.Cells[2]?.Value||row.Cells[1]?.Value||'').replace(/[,\s]/g,''))||0;
+        const v = parseFloat((row.Cells[1]?.Value||'').replace(/[,\s]/g,''))||0;
         if(k) m[k] = (m[k]||0) + v;
         // Scan for FX rate in any cell
         row.Cells.forEach(c => {
