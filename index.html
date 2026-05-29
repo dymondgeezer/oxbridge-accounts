@@ -117,6 +117,21 @@ code{background:var(--bg3);padding:2px 6px;border-radius:3px;font-size:11px;font
 ::-webkit-scrollbar{width:4px;height:4px;}
 ::-webkit-scrollbar-track{background:transparent;}
 ::-webkit-scrollbar-thumb{background:var(--bg4);border-radius:2px;}
+/* Period selector */
+.period-bar{display:flex;align-items:center;gap:8px;margin-bottom:16px;flex-wrap:wrap;}
+.psel-btn{padding:4px 12px;border-radius:20px;font-size:11px;font-weight:600;cursor:pointer;border:1px solid var(--border2);background:var(--bg3);color:var(--text2);transition:all .15s;}
+.psel-btn:hover{border-color:var(--accent);color:var(--accent);}
+.psel-btn.active{background:var(--accent);color:#fff;border-color:var(--accent);}
+.month-table{width:100%;border-collapse:collapse;font-size:11px;}
+.month-table th{background:var(--bg3);color:var(--text3);font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;padding:7px 10px;text-align:right;border-bottom:1px solid var(--border);white-space:nowrap;cursor:pointer;}
+.month-table th:first-child{text-align:left;cursor:default;min-width:180px;}
+.month-table th.active-col{background:var(--accent);color:#fff;}
+.month-table td{padding:5px 10px;text-align:right;border-bottom:1px solid var(--border);color:var(--text);white-space:nowrap;font-size:11px;}
+.month-table td:first-child{text-align:left;color:var(--text2);}
+.month-table tr.mtr-h td{background:var(--bg3);color:var(--text3);font-size:10px;text-transform:uppercase;letter-spacing:.5px;font-weight:600;}
+.month-table tr.mtr-t td{font-weight:700;background:rgba(124,111,224,.07);border-top:1px solid var(--border2);}
+.month-table tr:hover td{background:rgba(255,255,255,.015);}
+.month-table th.active-col~td{background:rgba(124,111,224,.04);}
 /* Toast */
 .toast{position:fixed;top:60px;right:20px;z-index:300;max-width:400px;padding:10px 14px;border-radius:var(--rs);font-size:12px;display:flex;align-items:flex-start;gap:8px;animation:fadeIn .2s ease;line-height:1.5;}
 @keyframes fadeIn{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}
@@ -134,6 +149,7 @@ code{background:var(--bg3);padding:2px 6px;border-radius:3px;font-size:11px;font
     <button class="ntab" onclick="setView('balance')" id="tab-balance" disabled>Balance Sheet</button>
     <button class="ntab" onclick="setView('capital')" id="tab-capital" disabled>Capital &amp; Reserves</button>
     <button class="ntab" onclick="setView('facilities')" id="tab-facilities" disabled>Facilities</button>
+    <button class="ntab" onclick="setView('periods')" id="tab-periods" disabled>Periods</button>
   </div>
   <div class="nright">
     <span class="pbadge" id="period-badge">Not connected</span>
@@ -519,6 +535,49 @@ async function getPnL(org) {
   return parseReport(data);
 }
 
+async function getPnLMonthly(org, fromDate, toDate) {
+  // Calculate number of months between dates
+  const from = new Date(fromDate);
+  const to   = new Date(toDate);
+  const months = (to.getFullYear()-from.getFullYear())*12 + (to.getMonth()-from.getMonth()) + 1;
+  const periods = Math.min(Math.max(months, 1), 12);
+  const data = await xGet(org,
+    `/Reports/ProfitAndLoss?fromDate=${fromDate}&toDate=${toDate}&periods=${periods}&timeframe=MONTH`
+  );
+  return parseReportMonthly(data, periods);
+}
+
+function parseReportMonthly(data, periods) {
+  // Returns { headers: ['Apr 2026', 'May 2026',...], rows: { 'Sales': [v1,v2,...], ... } }
+  const report = data.Reports?.[0];
+  if(!report) return {headers:[], rows:{}};
+
+  // Extract column headers from the Header row
+  let headers = [];
+  const headerRow = report.Rows?.find(r => r.RowType === 'Header');
+  if(headerRow) {
+    headers = headerRow.Cells?.slice(1).map(c => c.Value||'') || [];
+  }
+
+  const rows = {};
+  function walk(rowList) {
+    if(!rowList) return;
+    for(const row of rowList) {
+      if(row.RowType === 'Row' && row.Cells?.length >= 2) {
+        const k = row.Cells[0]?.Value?.trim();
+        if(k) {
+          rows[k] = row.Cells.slice(1).map(c =>
+            parseFloat((c.Value||'').replace(/[,\s]/g,''))||0
+          );
+        }
+      }
+      if(row.Rows) walk(row.Rows);
+    }
+  }
+  walk(report.Rows);
+  return {headers, rows};
+}
+
 async function getBS(org) {
   const today = new Date().toISOString().slice(0,10);
   // Try with paymentsOnly=false to get full accrual BS
@@ -716,7 +775,8 @@ function setView(v) {
 function renderView() {
   if(!S.data) return;
   const el=$('main');
-  const map={overview:renderOverview,pnl:renderPnL,balance:renderBalance,capital:renderCapital,facilities:renderFacilities};
+  const map={overview:renderOverview,pnl:renderPnL,balance:renderBalance,capital:renderCapital,facilities:renderFacilities,
+    periods:()=>{ if(!periodsState.data) loadPeriods(periodsState.range); else renderPeriods($('main')); }};
   (map[S.view]||renderOverview)(el);
 }
 function showDash() {
@@ -972,6 +1032,162 @@ function renderFacilities(el) {
     </div>
     <div style="font-size:11px;color:var(--text3)">${fmtF(f.actual)} drawn of ${fmtF(f.limit)} limit · ${fmtF(f.limit-f.actual)} headroom</div>
   </div>`;}).join('')}`;
+}
+
+// ── PERIODS VIEW
+let periodsState = { range: 'ytd', activeCol: null, data: null };
+
+async function loadPeriods(range) {
+  periodsState.range = range;
+  const today = new Date();
+  let fromDate, toDate = today.toISOString().slice(0,10);
+
+  if(range === 'ytd') {
+    const fyStart = new Date(today.getFullYear(), 3, 1);
+    if(today < fyStart) fyStart.setFullYear(fyStart.getFullYear()-1);
+    fromDate = fyStart.toISOString().slice(0,10);
+  } else if(range === '3m') {
+    const d = new Date(today); d.setMonth(d.getMonth()-2); d.setDate(1);
+    fromDate = d.toISOString().slice(0,10);
+  } else if(range === '6m') {
+    const d = new Date(today); d.setMonth(d.getMonth()-5); d.setDate(1);
+    fromDate = d.toISOString().slice(0,10);
+  } else if(range === '12m') {
+    const d = new Date(today); d.setMonth(d.getMonth()-11); d.setDate(1);
+    fromDate = d.toISOString().slice(0,10);
+  } else if(range === '1m') {
+    const d = new Date(today); d.setDate(1);
+    fromDate = d.toISOString().slice(0,10);
+  }
+
+  const el = $('main');
+  el.innerHTML = `<div style="text-align:center;padding:60px 0;color:var(--text3)">Loading period data from Xero...</div>`;
+
+  try {
+    const [ukM, bvM, ardM] = await Promise.all([
+      getPnLMonthly('uk', fromDate, toDate),
+      getPnLMonthly('bv', fromDate, toDate),
+      getPnLMonthly('ard', fromDate, toDate),
+    ]);
+    periodsState.data = {ukM, bvM, ardM, fromDate, toDate};
+    periodsState.activeCol = (ukM.headers.length || 1) - 1; // default to latest month
+    renderPeriods(el);
+  } catch(err) {
+    el.innerHTML = `<div style="color:var(--red);padding:40px">${err.message}</div>`;
+  }
+}
+
+function renderPeriods(el) {
+  if(!S.data) return;
+  const {ukM, bvM, ardM} = periodsState.data;
+  const fx = S.data.fx;
+  const c = v => (v||0)*fx;
+  const headers = ukM.headers;
+  const n = headers.length;
+  const activeCol = periodsState.activeCol ?? n-1;
+
+  // Build consolidated monthly figures
+  const ukR = ukM.rows, bvR = bvM.rows, ardR = ardM.rows;
+
+  const getCol = (rows, key, col) => (rows[key]||[])[col]||0;
+
+  // For each month column build consolidated P&L
+  const months = headers.map((h, i) => {
+    const ukSales  = getCol(ukR,'Sales',i);
+    const ukInterco= getCol(ukR,'Sales (inter company)',i);
+    const ukCOS    = ['Purchases','Purchase (inter company)','Logistic Costs','Damage/Shortage of goods','Plastic Packaging Tax','Warehouse Costs']
+                     .reduce((s,k)=>s+getCol(ukR,k,i),0);
+    const ukGP     = ukSales+ukInterco-ukCOS;
+    const ukExclude= new Set(['Sales','Sales (inter company)','Purchases','Purchase (inter company)','Logistic Costs','Damage/Shortage of goods','Plastic Packaging Tax','Warehouse Costs','Inter-entity BV TP Adjustment','Sundry Receipts','Gross Profit','Net Profit','Foreign Currency Gains and Losses','Total Turnover','Total Cost of Sales','Total Administrative Costs','Total Other Income','Operating Profit','Profit on Ordinary Activities Before Taxation','Profit after Taxation','_fx']);
+    const ukAdmin  = Object.entries(ukR).filter(([k])=>!ukExclude.has(k)).reduce((s,[k,v])=>s+(v[i]||0),0);
+    const ukOther  = getCol(ukR,'Inter-entity BV TP Adjustment',i)+getCol(ukR,'Sundry Receipts',i);
+    const ukNet    = ukGP - ukAdmin + ukOther;
+
+    const bvExt    = getCol(bvR,'External Sales',i);
+    const bvInterco= getCol(bvR,'Inter Co Sales',i);
+    const bvCOS    = ['External COGS','Inter Co COGS','Logistic Costs','Warehouse Costs','External COGS - Import Duties','Labelling','Damage/Shortage of goods']
+                     .reduce((s,k)=>s+getCol(bvR,k,i),0);
+    const bvGross  = bvExt+bvInterco-bvCOS;
+    const bvExclude= new Set(['External Sales','Inter Co Sales','External COGS','Inter Co COGS','Logistic Costs','Warehouse Costs','External COGS - Import Duties','Labelling','Damage/Shortage of goods','Gross Profit','Net Profit','Total Trading Income','Total Cost of Sales','Total Operating Expenses','_fx']);
+    const bvExp    = Object.entries(bvR).filter(([k])=>!bvExclude.has(k)).reduce((s,[k,v])=>s+(v[i]||0),0);
+    const bvNet    = bvGross - bvExp;
+
+    const ardInc   = getCol(ardR,'Sales',i);
+    const ardCOS   = getCol(ardR,'Direct Wages',i);
+    const ardExclude= new Set(['Sales','Direct Wages','Gross Profit','Net Profit','Total Turnover','Total Cost of Sales','Total Administrative Costs','Operating Profit','Profit on Ordinary Activities Before Taxation','Profit after Taxation','_fx']);
+    const ardAdmin = Object.entries(ardR).filter(([k])=>!ardExclude.has(k)).reduce((s,[k,v])=>s+(v[i]||0),0);
+    const ardNet   = ardInc - ardCOS - ardAdmin;
+
+    const extSales = ukSales + c(bvExt);
+    const gp       = ukGP + c(bvGross);
+    const net      = ukNet + c(bvNet) + ardNet;
+    const gpPct    = extSales>0 ? gp/extSales : 0;
+
+    return {h, ukSales, ukInterco, ukGP, ukAdmin, ukNet, ukOther,
+            bvExtGBP:c(bvExt), bvGPGBP:c(bvGross), bvNetGBP:c(bvNet),
+            ardInc, ardNet, extSales, gp, net, gpPct};
+  });
+
+  const thCols = headers.map((h,i) =>
+    `<th class="${i===activeCol?'active-col':''}" onclick="periodsState.activeCol=${i};renderPeriods($('main'))" style="cursor:pointer">${h}</th>`
+  ).join('');
+
+  const dataRow = (label, vals, cls='', indent=false) => {
+    const tds = vals.map((v,i) =>
+      `<td class="${i===activeCol?'vp':''}" style="${i===activeCol?'background:rgba(124,111,224,.08);font-weight:600':''}">${v==null?'—':fmtF(v)}</td>`
+    ).join('');
+    return `<tr class="${cls}"><td style="text-align:left;${indent?'padding-left:24px':''}">${label}</td>${tds}</tr>`;
+  };
+
+  const gpRow = (label, vals, cls='') => {
+    const tds = vals.map((v,i) =>
+      `<td class="${v<0?'vn':'vp'}" style="${i===activeCol?'background:rgba(124,111,224,.08);font-weight:600':''}">${fmtF(v)}</td>`
+    ).join('');
+    return `<tr class="${cls}"><td style="text-align:left">${label}</td>${tds}</tr>`;
+  };
+
+  const pctRow = (label, vals) => {
+    const tds = vals.map((v,i) =>
+      `<td class="mt" style="${i===activeCol?'background:rgba(124,111,224,.08)':''}">${fmtP(v)}</td>`
+    ).join('');
+    return `<tr><td style="text-align:left;color:var(--text3)">${label}</td>${tds}</tr>`;
+  };
+
+  el.innerHTML = `
+  <div class="ph">
+    <div class="pt">Periods — Monthly P&L</div>
+    <div class="ps">Click a column to highlight · All figures in £ · BV converted at ${fx.toFixed(4)}</div>
+  </div>
+  <div class="period-bar">
+    <span style="font-size:11px;color:var(--text3);margin-right:4px">Quick select:</span>
+    ${[['1m','This Month'],['3m','Last 3M'],['6m','Last 6M'],['12m','Last 12M'],['ytd','YTD']].map(([r,l])=>
+      `<button class="psel-btn ${periodsState.range===r?'active':''}" onclick="loadPeriods('${r}')">${l}</button>`
+    ).join('')}
+  </div>
+  <div class="twrap">
+    <table class="month-table">
+      <thead><tr><th>Metric</th>${thCols}</tr></thead>
+      <tbody>
+        <tr class="mtr-h"><td colspan="${n+1}">Consolidated Group</td></tr>
+        ${dataRow('External Sales', months.map(m=>m.extSales))}
+        ${gpRow('Gross Profit', months.map(m=>m.gp), 'mtr-t')}
+        ${pctRow('GP Margin %', months.map(m=>m.gpPct))}
+        ${gpRow('Net Profit', months.map(m=>m.net), 'mtr-t')}
+        <tr class="mtr-h"><td colspan="${n+1}">UK Ltd</td></tr>
+        ${dataRow('External Sales', months.map(m=>m.ukSales))}
+        ${gpRow('Gross Profit', months.map(m=>m.ukGP))}
+        ${dataRow('Admin Costs', months.map(m=>m.ukAdmin))}
+        ${gpRow('Net Profit', months.map(m=>m.ukNet), 'mtr-t')}
+        <tr class="mtr-h"><td colspan="${n+1}">BV (£)</td></tr>
+        ${dataRow('External Sales', months.map(m=>m.bvExtGBP))}
+        ${gpRow('Gross Profit', months.map(m=>m.bvGPGBP))}
+        ${gpRow('Net Profit', months.map(m=>m.bvNetGBP), 'mtr-t')}
+        <tr class="mtr-h"><td colspan="${n+1}">ARD International</td></tr>
+        ${dataRow('Mgmt Fee', months.map(m=>m.ardInc))}
+        ${gpRow('Net Profit', months.map(m=>m.ardNet), 'mtr-t')}
+      </tbody>
+    </table>
+  </div>`;
 }
 
 // ── PKCE HELPERS
