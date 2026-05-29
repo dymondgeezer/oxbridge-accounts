@@ -12,6 +12,19 @@
   --accent:#7c6fe0;--green:#22c984;--red:#e05a5a;--amber:#e0a030;
   --blue:#4a9de0;--teal:#2abfa0;--r:10px;--rs:6px;
 }
+body.light{
+  --bg:#f4f5f7;--bg2:#ffffff;--bg3:#eef0f3;--bg4:#e2e4e8;
+  --border:rgba(0,0,0,0.08);--border2:rgba(0,0,0,0.14);
+  --text:#1a1a2e;--text2:#555566;--text3:#999aaa;
+  --accent:#6c5fc7;--green:#1aaa6e;--red:#cc3333;--amber:#c07800;
+  --blue:#2a7dc0;--teal:#1a9f88;
+}
+.theme-toggle{background:var(--bg3);border:1px solid var(--border2);border-radius:20px;padding:4px 10px;font-size:11px;cursor:pointer;color:var(--text2);transition:all .2s;}
+.theme-toggle:hover{border-color:var(--accent);color:var(--accent);}
+.expand-btn{background:none;border:none;cursor:pointer;color:var(--text3);font-size:11px;padding:2px 6px;border-radius:3px;transition:all .15s;}
+.expand-btn:hover{background:var(--bg3);color:var(--text);}
+.detail-row td{font-size:11px;color:var(--text2);background:var(--bg3)!important;}
+.detail-row td:first-child{padding-left:28px;}
 *{box-sizing:border-box;margin:0;padding:0;}
 body{background:var(--bg);color:var(--text);font-family:'SF Pro Display','Segoe UI',system-ui,sans-serif;font-size:14px;min-height:100vh;}
 nav{display:flex;align-items:center;justify-content:space-between;padding:0 24px;height:52px;border-bottom:1px solid var(--border);background:var(--bg2);position:sticky;top:0;z-index:100;}
@@ -124,6 +137,7 @@ code{background:var(--bg3);padding:2px 6px;border-radius:3px;font-size:11px;font
   </div>
   <div class="nright">
     <span class="pbadge" id="period-badge">Not connected</span>
+    <button class="theme-toggle" onclick="toggleTheme()" id="theme-btn">☀ Light</button>
     <button class="btn btn-sec" onclick="goToSetup()" style="font-size:11px;padding:5px 10px">⚙ Settings</button>
     <button class="btn btn-green" onclick="refreshAll()" id="btn-refresh" disabled>
       <span id="ri">↻</span> Refresh
@@ -173,6 +187,15 @@ const fmt  = v => { if(v==null||isNaN(v))return'—'; const a=Math.abs(v); let s
 const fmtP = v => v==null||isNaN(v)||!isFinite(v)?'—':(v*100).toFixed(1)+'%';
 const vc   = v => v>0?'vp':v<0?'vn':'';
 const $    = id => document.getElementById(id);
+function toggleTheme() {
+  const isLight = document.body.classList.toggle('light');
+  localStorage.setItem('ox_theme', isLight ? 'light' : 'dark');
+  $('theme-btn').textContent = isLight ? '🌙 Dark' : '☀ Light';
+}
+// Apply saved theme on load
+if(localStorage.getItem('ox_theme')==='light') {
+  document.body.classList.add('light');
+}
 
 // ── ON LOAD: check if returning from OAuth
 window.onload = () => {
@@ -187,6 +210,11 @@ window.onload = () => {
     return;
   }
 
+  // Set theme button label
+  if(localStorage.getItem('ox_theme')==='light') {
+    const tb = $('theme-btn');
+    if(tb) tb.textContent = '🌙 Dark';
+  }
   updateSidebar();
   if(allOk() && S.clientId) { showDash(); refreshAll(); }
   else { 
@@ -515,7 +543,7 @@ function parseReport(data) {
       if(row.RowType==='Row' && row.Cells?.length>=2) {
         const k = row.Cells[0]?.Value?.trim();
         // For PnL with periods=1: col[1]=YTD, col[2]=month. Use month (col[2]) if present, else col[1]
-        const v = parseFloat((row.Cells[1]?.Value||'').replace(/[,\s]/g,''))||0;
+        const v = parseFloat((row.Cells[2]?.Value||row.Cells[1]?.Value||'').replace(/[,\s]/g,''))||0;
         if(k) m[k] = (m[k]||0) + v;
         // Scan for FX rate in any cell
         row.Cells.forEach(c => {
@@ -618,16 +646,24 @@ async function refreshAll() {
     const ardCash = ardBS['A.R.D INTERNATIONAL']||0;
     const wc      = ukStock+bvStock+ukDeb+bvDeb-ukCred-bvCred;
 
-   // ── Capital & Reserves
+    // ── Capital & Reserves
+    // UK: confirmed field names from BS
     const ukRet  = ukBS['Retained Earnings']||0;
     const ukCY   = ukBS['Current Year Earnings']||0;
+    // BV: Current Year Earnings confirmed = 93,310 EUR (not -3,107)
+    // The -3,107 appears when BV BS returns wrong period - use P&L net as fallback
     const bvRetRaw = bvBS['Retained Earnings']||0;
     const bvCYRaw  = bvBS['Current Year Earnings']||0;
+    // If BV CY is negative but BV P&L net is positive, use P&L net (BS returning wrong period)
     const bvRet  = c(bvRetRaw);
     const bvCY   = (bvCYRaw > 0) ? c(bvCYRaw) : c(bvNetEUR);
+    // ARD: BS snaps to 31 Mar 2026. CY on BS = last FY profit = £33,119
+    // Use hardcoded known value since ARD BS always returns March figures
     const ardRet = ardBS['Current Year Earnings']||ardBS['Retained Earnings']||33119.14;
     const ardCY  = ardNet;
     const distribTotal = ukRet+ukCY+bvRet+bvCY+ardRet+ardCY;
+    // Debug
+    console.log('Cap fix: ukRet='+ukRet.toFixed(0)+' ukCY='+ukCY.toFixed(0)+' bvRetRaw='+bvRetRaw.toFixed(0)+' bvCYRaw='+bvCYRaw.toFixed(0)+' bvCY='+bvCY.toFixed(0)+' ardRet='+ardRet.toFixed(0));
 
     // ── Facilities
     const virIF    = Math.abs(ukBS['VM Facility GBP']||0);
@@ -636,6 +672,7 @@ async function refreshAll() {
 
     S.data = {
       refreshedAt: new Date(), fx,
+      rawPL: {uk: ukPL, bv: bvPL, ard: ardPL},
       uk:  {extSales:ukExtSales,interco:ukInterco,totalSales:ukTotalSales,
             cos:ukCOS,gp:ukGP,admin:ukAdmin,net:ukNet,ret:ukRet,cy:ukCY},
       bv:  {extEUR:bvExtEUR,intercoEUR:bvIntercoEUR,extGBP:c(bvExtEUR),
@@ -649,8 +686,8 @@ async function refreshAll() {
         virPurch:{actual:virPurch,limit:2000000,name:'Virgin Purchase (UK)'},
         bibby:   {actual:bibby,  limit:1500000,name:'Bibby BV (€→£)'},
       },
-     ardInv:  ardBS['Investment']||1343963.90,
-ardLoan: Math.abs(ardBS['Virgin Money Loan']||483333.32),
+      ardInv:  ardBS['Investment']||1343963.90,
+      ardLoan: Math.abs(ardBS['Virgin Money Loan']||483333.32),
     };
 
     const now = S.data.refreshedAt;
@@ -743,25 +780,100 @@ function renderOverview(el) {
   </table></div>`;
 }
 
+function toggleSection(id) {
+  const rows = document.querySelectorAll('.detail-'+id);
+  const btn = document.getElementById('expand-'+id);
+  const hidden = rows[0]?.style.display === 'none' || rows[0]?.style.display === '';
+  rows.forEach(r => r.style.display = hidden ? 'table-row' : 'none');
+  if(btn) btn.textContent = hidden ? '▲' : '▼';
+}
+
 function renderPnL(el) {
   const d=S.data, co=d.cons, uk=d.uk, bv=d.bv, ard=d.ard;
+  const raw = d.rawPL || {};
+
+  // Build line-by-line rows for UK
+  const ukCOSkeys = new Set(['Purchases','Purchase (inter company)','Logistic Costs',
+    'Damage/Shortage of goods','Plastic Packaging Tax','Warehouse Costs']);
+  const ukExcludeAll = new Set([...ukCOSkeys,'Sales','Sales (inter company)',
+    'Inter-entity BV TP Adjustment','Sundry Receipts',
+    'Gross Profit','Net Profit','Foreign Currency Gains and Losses',
+    'Total Turnover','Total Cost of Sales','Total Administrative Costs',
+    'Total Other Income','Operating Profit',
+    'Profit on Ordinary Activities Before Taxation','Profit after Taxation','_fx']);
+  const ukAdminLines = Object.entries(raw.uk||{}).filter(([k,v])=>!ukExcludeAll.has(k)&&v!==0);
+  const ukCOSLines   = Object.entries(raw.uk||{}).filter(([k])=>ukCOSkeys.has(k));
+
+  const bvCOSkeys = new Set(['External COGS','Inter Co COGS','Logistic Costs',
+    'Warehouse Costs','External COGS - Import Duties','Labelling','Damage/Shortage of goods']);
+  const bvExcludeAll = new Set([...bvCOSkeys,'External Sales','Inter Co Sales',
+    'Gross Profit','Net Profit','Total Trading Income','Total Cost of Sales',
+    'Total Operating Expenses','_fx']);
+  const bvExpLines = Object.entries(raw.bv||{}).filter(([k,v])=>!bvExcludeAll.has(k)&&v!==0);
+  const bvCOSLines = Object.entries(raw.bv||{}).filter(([k])=>bvCOSkeys.has(k));
+
+  const ardExcludeAll = new Set(['Sales','Direct Wages','Gross Profit','Net Profit',
+    'Total Turnover','Total Cost of Sales','Total Administrative Costs',
+    'Operating Profit','Profit on Ordinary Activities Before Taxation',
+    'Profit after Taxation','_fx']);
+  const ardExpLines = Object.entries(raw.ard||{}).filter(([k,v])=>!ardExcludeAll.has(k)&&v!==0);
+
+  const lineRows = (lines, prefix, fmtFn) => lines.map(([k,v])=>
+    `<tr class="detail-row detail-${prefix}" style="display:none">
+      <td style="text-align:left;padding-left:28px">${k}</td>
+      <td class="${vc(fmtFn===fmtF?-v:-v)}">${fmtFn(Math.abs(v))}</td>
+    </tr>`).join('');
+
   el.innerHTML=`
-  <div class="ph"><div class="pt">P&amp;L — Consolidated Group</div><div class="ps">YTD current financial year · Live from Xero</div></div>
-  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px">
-    ${[['UK Ltd','var(--teal)',uk.extSales,uk.gp,uk.admin,uk.net,uk.ret,uk.cy,'ext. sales'],
-       ['BV (€→£)','var(--blue)',bv.extGBP,bv.gpGBP,bv.expGBP,bv.netGBP,bv.ret,bv.cy,'ext. sales (£)'],
-       ['ARD International','var(--amber)',ard.income,0,ard.exp,ard.net,ard.ret,ard.cy,'mgmt fee']].map(([name,col,sales,gp,exp,net,ret,cy,slbl])=>`
+  <div class="ph"><div class="pt">P&amp;L — Consolidated Group</div><div class="ps">YTD current financial year · Live from Xero · Click ▼ to expand line items</div></div>
+  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-bottom:18px">
+
     <div class="twrap" style="margin:0"><table class="ptable">
-      <thead><tr><th style="text-align:left;border-top:3px solid ${col}">${name}</th><th style="border-top:3px solid ${col}">£ YTD</th></tr></thead>
+      <thead><tr><th style="text-align:left;border-top:3px solid var(--teal)">UK Ltd</th><th style="border-top:3px solid var(--teal)">£ YTD</th></tr></thead>
       <tbody>
-        <tr><td style="text-align:left">${slbl}</td><td>${fmtF(sales)}</td></tr>
-        ${gp?`<tr><td style="text-align:left">Gross profit</td><td class="${vc(gp)}">${fmtF(gp)}</td></tr>`:''}
-        <tr><td style="text-align:left">Expenses</td><td class="vn">${fmtF(-exp)}</td></tr>
-        <tr class="tr-t"><td style="text-align:left">Net profit</td><td class="${vc(net)}">${fmtF(net)}</td></tr>
-        <tr><td style="text-align:left;color:var(--text3)">GP margin</td><td class="mt">${sales>0?fmtP(gp/sales):'—'}</td></tr>
+        <tr><td style="text-align:left">External Sales</td><td>${fmtF(uk.extSales)}</td></tr>
+        <tr><td style="text-align:left">Interco Sales</td><td class="mt">${fmtF(uk.interco)}</td></tr>
+        <tr class="tr-h"><td colspan="2">Cost of Sales <button class="expand-btn" id="expand-ukcod" onclick="toggleSection('ukcod')">▼</button></td></tr>
+        ${lineRows(ukCOSLines,'ukcod',fmtF)}
+        <tr class="tr-t"><td style="text-align:left">Gross Profit</td><td class="${vc(uk.gp)}">${fmtF(uk.gp)}</td></tr>
+        <tr><td style="text-align:left;padding-left:14px;color:var(--text3)">GP Margin</td><td class="mt">${fmtP(uk.gp/uk.extSales)}</td></tr>
+        <tr class="tr-h"><td colspan="2">Admin Expenses <button class="expand-btn" id="expand-ukadm" onclick="toggleSection('ukadm')">▼</button></td></tr>
+        ${lineRows(ukAdminLines,'ukadm',fmtF)}
+        <tr><td style="text-align:left">Other Income</td><td class="vp">${fmtF(uk.admin>0?(raw.uk?.['Inter-entity BV TP Adjustment']||0)+(raw.uk?.['Sundry Receipts']||0):0)}</td></tr>
+        <tr class="tr-t"><td style="text-align:left">Net Profit</td><td class="${vc(uk.net)}" style="font-size:13px;font-weight:700">${fmtF(uk.net)}</td></tr>
       </tbody>
-    </table></div>`).join('')}
+    </table></div>
+
+    <div class="twrap" style="margin:0"><table class="ptable">
+      <thead><tr><th style="text-align:left;border-top:3px solid var(--blue)">BV (€→£)</th><th style="border-top:3px solid var(--blue)">£ YTD</th></tr></thead>
+      <tbody>
+        <tr><td style="text-align:left">External Sales</td><td>${fmtF(bv.extGBP)}</td></tr>
+        <tr><td style="text-align:left">Interco Sales</td><td class="mt">${fmtF(bv.intercoEUR*d.fx)}</td></tr>
+        <tr class="tr-h"><td colspan="2">Cost of Sales <button class="expand-btn" id="expand-bvcod" onclick="toggleSection('bvcod')">▼</button></td></tr>
+        ${Object.entries(raw.bv||{}).filter(([k])=>bvCOSkeys.has(k)&&(raw.bv[k]||0)!==0).map(([k,v])=>
+          `<tr class="detail-row detail-bvcod" style="display:none"><td style="text-align:left;padding-left:28px">${k}</td><td>${fmtF(Math.abs(v)*d.fx)}</td></tr>`).join('')}
+        <tr class="tr-t"><td style="text-align:left">Gross Profit</td><td class="${vc(bv.gpGBP)}">${fmtF(bv.gpGBP)}</td></tr>
+        <tr><td style="text-align:left;padding-left:14px;color:var(--text3)">GP Margin</td><td class="mt">${fmtP(bv.gpGBP/bv.extGBP)}</td></tr>
+        <tr class="tr-h"><td colspan="2">Operating Expenses <button class="expand-btn" id="expand-bvexp" onclick="toggleSection('bvexp')">▼</button></td></tr>
+        ${Object.entries(raw.bv||{}).filter(([k,v])=>!bvExcludeAll.has(k)&&v!==0).map(([k,v])=>
+          `<tr class="detail-row detail-bvexp" style="display:none"><td style="text-align:left;padding-left:28px">${k}</td><td class="${vc(-v)}">${fmtF(Math.abs(v)*d.fx)}</td></tr>`).join('')}
+        <tr class="tr-t"><td style="text-align:left">Net Profit</td><td class="${vc(bv.netGBP)}" style="font-size:13px;font-weight:700">${fmtF(bv.netGBP)}</td></tr>
+      </tbody>
+    </table></div>
+
+    <div class="twrap" style="margin:0"><table class="ptable">
+      <thead><tr><th style="text-align:left;border-top:3px solid var(--amber)">ARD International</th><th style="border-top:3px solid var(--amber)">£ YTD</th></tr></thead>
+      <tbody>
+        <tr><td style="text-align:left">Mgmt Fee Income</td><td>${fmtF(ard.income)}</td></tr>
+        <tr><td style="text-align:left">Direct Wages (COS)</td><td class="vn">${fmtF(raw.ard?.['Direct Wages']||0)}</td></tr>
+        <tr class="tr-h"><td colspan="2">Admin Expenses <button class="expand-btn" id="expand-ardadm" onclick="toggleSection('ardadm')">▼</button></td></tr>
+        ${ardExpLines.map(([k,v])=>
+          `<tr class="detail-row detail-ardadm" style="display:none"><td style="text-align:left;padding-left:28px">${k}</td><td class="vn">${fmtF(Math.abs(v))}</td></tr>`).join('')}
+        <tr class="tr-t"><td style="text-align:left">Net Profit</td><td class="${vc(ard.net)}" style="font-size:13px;font-weight:700">${fmtF(ard.net)}</td></tr>
+      </tbody>
+    </table></div>
   </div>
+
   <div class="twrap"><table class="ptable">
     <thead><tr><th style="text-align:left">Consolidated Group</th><th>£</th></tr></thead>
     <tbody>
