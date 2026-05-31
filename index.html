@@ -653,6 +653,7 @@ async function refreshAll() {
 
     // FX from BV BS footer (XE.com rate)
     const fx = bvBS._fx || 0.866122;
+    alert('UK P&L keys: '+JSON.stringify(Object.keys(ukPL)));
     $('fx-disp').textContent = fx.toFixed(4);
     const c = v => (v||0)*fx;
 
