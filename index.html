@@ -526,16 +526,21 @@ async function xGet(org, path) {
 }
 
 async function getPnL(org) {
-  // No fromDate — let Xero use its FY start to ensure consistent YTD figures
+  // Pass fromDate = current FY April start so Xero returns correct YTD
   const to = new Date().toISOString().slice(0,10);
-  const data = await xGet(org, `/Reports/ProfitAndLoss?toDate=${to}`);
+  const fyYear = getFYYear(to);
+  const fyStart = `${fyYear}-04-01`;
+  const data = await xGet(org, `/Reports/ProfitAndLoss?fromDate=${fyStart}&toDate=${to}`);
   return parseReport(data);
 }
 
 async function getPnLYTD(org, toDate) {
-  // Get YTD P&L to this date — Xero determines fromDate from financial year start
-  // We call without fromDate so Xero uses its own FY start (avoids "31 March" boundary issues)
-  const data = await xGet(org, `/Reports/ProfitAndLoss?toDate=${toDate}`);
+  // Always pass fromDate = April 1 of the FY containing toDate.
+  // Without fromDate, Xero defaults to the CURRENT FY regardless of toDate —
+  // meaning past-FY calls all return the same current YTD data, causing £0 on subtraction.
+  const fyYear = getFYYear(toDate);
+  const fyStart = `${fyYear}-04-01`;
+  const data = await xGet(org, `/Reports/ProfitAndLoss?fromDate=${fyStart}&toDate=${toDate}`);
   return parseReport(data);
 }
 
