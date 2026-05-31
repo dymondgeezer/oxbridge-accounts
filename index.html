@@ -531,7 +531,7 @@ async function getPnL(org) {
   const fyYear = getFYYear(to);
   const fyStart = `${fyYear}-04-01`;
   const data = await xGet(org, `/Reports/ProfitAndLoss?fromDate=${fyStart}&toDate=${to}`);
-  return parseReport(data);
+  return parseReport(data, org+' P&L');
 }
 
 // Fetch P&L with N periods (individual monthly columns from Xero periods API)
@@ -604,13 +604,13 @@ async function getBS(org) {
     // If empty, try without date parameter
     console.warn(org+' BS empty, trying without date');
     const data2 = await xGet(org,`/Reports/BalanceSheet`);
-    return parseReport(data2);
+    return parseReport(data2, org+' BS retry');
   }
   console.log(org+' BS keys count:', Object.keys(result).filter(k=>!k.startsWith('_')).length);
   return result;
 }
 
-function parseReport(data) {
+function parseReport(data, label) {
   const m = {};
   let fxEUR = null;
   function walk(rows) {
