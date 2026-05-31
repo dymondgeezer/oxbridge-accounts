@@ -1027,11 +1027,20 @@ function renderFacilities(el) {
 // ── PERIODS VIEW
 let periodsState = { range: 'ytd', activeCol: null, data: null };
 
+// FY helper — UK FY starts April 1
+function getFYYear(toDateStr) {
+  const d = new Date(toDateStr);
+  return d.getMonth() >= 3 ? d.getFullYear() : d.getFullYear() - 1;
+}
+
+// Generation counter prevents stale renders from rapid clicking
+let _periodsGen = 0;
+
 async function loadPeriods(range) {
   periodsState.range = range;
-  const numMonths = {ytd: null, '1m': 1, '3m': 3, '6m': 6, '12m': 12}[range];
+  const myGen = ++_periodsGen; // claim this generation
 
-  // For YTD calculate months since April 1
+  const numMonths = {ytd: null, '1m': 1, '3m': 3, '6m': 6, '12m': 12}[range];
   let months;
   if(range === 'ytd') {
     const today = new Date();
@@ -1045,50 +1054,66 @@ async function loadPeriods(range) {
 
   const el = $('main');
   el.innerHTML = `<div style="text-align:center;padding:60px 0;color:var(--text3)">
-    Loading ${months.length} months from Xero...<br>
-    <span style="font-size:11px;opacity:.6">(${months.length * 3} API calls — please wait)</span>
+    <div style="margin-bottom:8px">Loading ${months.length} months…</div>
+    <div style="font-size:11px;opacity:.6">Fetching in batches to avoid rate limits</div>
   </div>`;
 
   try {
-    // KEY FIX: Xero ignores fromDate on P&L calls and always returns YTD from FY start.
-    // Solution: fetch YTD to each month-end + one extra (prev month), then subtract.
-    // Individual month = YTD(this month end) - YTD(previous month end)
-
-    // Build list of toDate values: one per month + one extra (month before oldest)
+    // Build toDate sequence: one per month + one extra (month before oldest)
     const toDateList = months.map(m => m.toDate);
     const oldestFrom = new Date(months[months.length-1].fromDate);
-    oldestFrom.setDate(0); // last day of month before oldest
+    oldestFrom.setDate(0);
     toDateList.push(oldestFrom.toISOString().slice(0,10));
 
-    el.innerHTML = `<div style="text-align:center;padding:60px 0;color:var(--text3)">
-      Loading ${months.length} months from Xero...<br>
-      <span style="font-size:11px;opacity:.6">(${toDateList.length * 3} YTD calls — subtracting to get monthly figures)</span>
-    </div>`;
-
-    // Fetch all YTD calls in parallel
-    const ytdResults = await Promise.all(
-      toDateList.map(d => Promise.all([
+    // Fetch in batches of 3 (one month = 3 orgs) to stay within Netlify concurrency limits
+    // This prevents rate-limit failures that cause everything to return {}
+    const allYTDs = [];
+    for(let i = 0; i < toDateList.length; i++) {
+      if(myGen !== _periodsGen) return; // another click happened — abort
+      const d = toDateList[i];
+      const [uk, bv, ard] = await Promise.all([
         getPnLYTD('uk',  d).catch(()=>({})),
         getPnLYTD('bv',  d).catch(()=>({})),
         getPnLYTD('ard', d).catch(()=>({})),
-      ]))
-    );
+      ]);
+      allYTDs.push([uk, bv, ard]);
 
-    // Compute monthly = YTD[i] - YTD[i+1]
-    const monthlyData = months.map((m, i) => ({
-      label:    m.label,
-      fromDate: m.fromDate,
-      toDate:   m.toDate,
-      uk:  subtractPnL(ytdResults[i][0], ytdResults[i+1][0]),
-      bv:  subtractPnL(ytdResults[i][1], ytdResults[i+1][1]),
-      ard: subtractPnL(ytdResults[i][2], ytdResults[i+1][2]),
-    }));
+      // Update progress
+      if(myGen === _periodsGen) {
+        el.innerHTML = `<div style="text-align:center;padding:60px 0;color:var(--text3)">
+          <div style="margin-bottom:8px">Loading ${months.length} months… (${i+1}/${toDateList.length})</div>
+          <div style="height:4px;background:var(--bg3);border-radius:2px;width:200px;margin:8px auto">
+            <div style="height:4px;background:var(--accent);border-radius:2px;width:${Math.round((i+1)/toDateList.length*100)}%"></div>
+          </div>
+        </div>`;
+      }
+    }
+
+    if(myGen !== _periodsGen) return; // stale — another request is in flight
+
+    // Compute monthly = YTD[i] - YTD[i+1], with FY boundary detection
+    const monthlyData = months.map((m, i) => {
+      const currFY = getFYYear(toDateList[i]);
+      const prevFY = getFYYear(toDateList[i+1]);
+      // FY boundary (e.g. April 2026 vs March 2026): first month of new FY = YTD is already monthly
+      const isFYBoundary = currFY !== prevFY;
+      return {
+        label:    m.label,
+        fromDate: m.fromDate,
+        toDate:   m.toDate,
+        uk:  isFYBoundary ? allYTDs[i][0] : subtractPnL(allYTDs[i][0], allYTDs[i+1][0]),
+        bv:  isFYBoundary ? allYTDs[i][1] : subtractPnL(allYTDs[i][1], allYTDs[i+1][1]),
+        ard: isFYBoundary ? allYTDs[i][2] : subtractPnL(allYTDs[i][2], allYTDs[i+1][2]),
+      };
+    });
 
     periodsState.data = {monthlyData};
     periodsState.activeCol = 0;
     renderPeriods(el);
   } catch(err) {
-    el.innerHTML = `<div style="color:var(--red);padding:40px">${err.message}</div>`;
+    if(myGen === _periodsGen) {
+      el.innerHTML = `<div style="color:var(--red);padding:40px">Error: ${err.message}</div>`;
+    }
   }
 }
 
