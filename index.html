@@ -526,19 +526,28 @@ async function xGet(org, path) {
 }
 
 async function getPnL(org) {
-  const today = new Date();
-  const fyStart = new Date(today.getFullYear(), 3, 1); // April = FY start
-  if(today < fyStart) fyStart.setFullYear(fyStart.getFullYear()-1);
-  const from = fyStart.toISOString().slice(0,10);
-  const to   = today.toISOString().slice(0,10);
-  const data = await xGet(org,`/Reports/ProfitAndLoss?fromDate=${from}&toDate=${to}`);
+  // No fromDate — let Xero use its FY start to ensure consistent YTD figures
+  const to = new Date().toISOString().slice(0,10);
+  const data = await xGet(org, `/Reports/ProfitAndLoss?toDate=${to}`);
   return parseReport(data);
 }
 
-async function getPnLForMonth(org, fromDate, toDate) {
-  // Individual month call - no periods parameter = true monthly figure
-  const data = await xGet(org, `/Reports/ProfitAndLoss?fromDate=${fromDate}&toDate=${toDate}`);
+async function getPnLYTD(org, toDate) {
+  // Get YTD P&L to this date — Xero determines fromDate from financial year start
+  // We call without fromDate so Xero uses its own FY start (avoids "31 March" boundary issues)
+  const data = await xGet(org, `/Reports/ProfitAndLoss?toDate=${toDate}`);
   return parseReport(data);
+}
+
+function subtractPnL(curr, prev) {
+  // Returns individual month = YTD(this month) - YTD(previous month)
+  const result = {};
+  const keys = new Set([...Object.keys(curr), ...Object.keys(prev)]);
+  for(const k of keys) {
+    if(k === '_fx') { result._fx = curr._fx || prev._fx; continue; }
+    result[k] = (curr[k]||0) - (prev[k]||0);
+  }
+  return result;
 }
 
 function getMonthRanges(numMonths) {
@@ -1041,26 +1050,42 @@ async function loadPeriods(range) {
   </div>`;
 
   try {
-    // Fetch all months in parallel - individual calls per month for true monthly figures
-    const results = await Promise.all(
-      months.map(m => Promise.all([
-        getPnLForMonth('uk',  m.fromDate, m.toDate).catch(()=>({})),
-        getPnLForMonth('bv',  m.fromDate, m.toDate).catch(()=>({})),
-        getPnLForMonth('ard', m.fromDate, m.toDate).catch(()=>({})),
+    // KEY FIX: Xero ignores fromDate on P&L calls and always returns YTD from FY start.
+    // Solution: fetch YTD to each month-end + one extra (prev month), then subtract.
+    // Individual month = YTD(this month end) - YTD(previous month end)
+
+    // Build list of toDate values: one per month + one extra (month before oldest)
+    const toDateList = months.map(m => m.toDate);
+    const oldestFrom = new Date(months[months.length-1].fromDate);
+    oldestFrom.setDate(0); // last day of month before oldest
+    toDateList.push(oldestFrom.toISOString().slice(0,10));
+
+    el.innerHTML = `<div style="text-align:center;padding:60px 0;color:var(--text3)">
+      Loading ${months.length} months from Xero...<br>
+      <span style="font-size:11px;opacity:.6">(${toDateList.length * 3} YTD calls — subtracting to get monthly figures)</span>
+    </div>`;
+
+    // Fetch all YTD calls in parallel
+    const ytdResults = await Promise.all(
+      toDateList.map(d => Promise.all([
+        getPnLYTD('uk',  d).catch(()=>({})),
+        getPnLYTD('bv',  d).catch(()=>({})),
+        getPnLYTD('ard', d).catch(()=>({})),
       ]))
     );
 
+    // Compute monthly = YTD[i] - YTD[i+1]
     const monthlyData = months.map((m, i) => ({
-      label:  m.label,
+      label:    m.label,
       fromDate: m.fromDate,
       toDate:   m.toDate,
-      uk:  results[i][0],
-      bv:  results[i][1],
-      ard: results[i][2],
+      uk:  subtractPnL(ytdResults[i][0], ytdResults[i+1][0]),
+      bv:  subtractPnL(ytdResults[i][1], ytdResults[i+1][1]),
+      ard: subtractPnL(ytdResults[i][2], ytdResults[i+1][2]),
     }));
 
     periodsState.data = {monthlyData};
-    periodsState.activeCol = 0; // newest month first
+    periodsState.activeCol = 0;
     renderPeriods(el);
   } catch(err) {
     el.innerHTML = `<div style="color:var(--red);padding:40px">${err.message}</div>`;
