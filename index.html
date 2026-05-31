@@ -534,43 +534,65 @@ async function getPnL(org) {
   return parseReport(data);
 }
 
-async function getPnLYTD(org, toDate) {
-  // Always pass fromDate = April 1 of the FY containing toDate.
-  // Without fromDate, Xero defaults to the CURRENT FY regardless of toDate —
-  // meaning past-FY calls all return the same current YTD data, causing £0 on subtraction.
-  const fyYear = getFYYear(toDate);
-  const fyStart = `${fyYear}-04-01`;
-  const data = await xGet(org, `/Reports/ProfitAndLoss?fromDate=${fyStart}&toDate=${toDate}`);
-  return parseReport(data);
+// Fetch P&L with N periods (individual monthly columns from Xero periods API)
+async function fetchPeriodsPnL(org, numPeriods) {
+  const data = await xGet(org, `/Reports/ProfitAndLoss?periods=${numPeriods}&timeframe=MONTH`);
+  return parseReportMonthly(data);
 }
 
+// Parse multi-column P&L response → { headers:[], rows:{key:[col0,col1,...]} }
+function parseReportMonthly(data) {
+  const report = data.Reports?.[0];
+  if(!report) return {headers:[], rows:{}};
+  const headerRow = report.Rows?.find(r => r.RowType==='Header');
+  const headers = headerRow?.Cells?.slice(1).map(c=>c.Value||'') || [];
+  const rows = {};
+  function walk(list) {
+    if(!list) return;
+    for(const row of list) {
+      if(row.RowType==='Row' && row.Cells?.length>=2) {
+        const k = row.Cells[0]?.Value?.trim();
+        if(k) rows[k] = row.Cells.slice(1).map(c=>parseFloat((c.Value||'').replace(/[,\s]/g,''))||0);
+      }
+      if(row.Rows) walk(row.Rows);
+    }
+  }
+  walk(report.Rows);
+  return {headers, rows};
+}
+
+// Extract FY year from a Xero period header like "30 Apr 26" or "31 May 2026"
+function parseHeaderFY(h) {
+  const mn = {Jan:1,Feb:2,Mar:3,Apr:4,May:5,Jun:6,Jul:7,Aug:8,Sep:9,Oct:10,Nov:11,Dec:12};
+  let month=0, year=0;
+  (h||'').split(/[\s/]+/).forEach(p => {
+    const m = Object.entries(mn).find(([name]) => p.startsWith(name));
+    if(m) month = m[1];
+    if(/^\d{4}$/.test(p)) year = parseInt(p);
+    if(/^\d{2}$/.test(p) && parseInt(p)>=20 && parseInt(p)<=50) year = 2000+parseInt(p);
+  });
+  if(!month||!year) return 0;
+  return month>=4 ? year : year-1;
+}
+
+// Get a single column from a rows dict as a flat object
+function getColObj(rows, col) {
+  const obj={};
+  for(const [k,v] of Object.entries(rows)) {
+    obj[k] = Array.isArray(v) ? (v[col]||0) : (v||0);
+  }
+  return obj;
+}
+
+// Subtract two flat P&L objects to get individual monthly figures
 function subtractPnL(curr, prev) {
-  // Returns individual month = YTD(this month) - YTD(previous month)
-  const result = {};
-  const keys = new Set([...Object.keys(curr), ...Object.keys(prev)]);
+  const result={};
+  const keys=new Set([...Object.keys(curr),...Object.keys(prev)]);
   for(const k of keys) {
-    if(k === '_fx') { result._fx = curr._fx || prev._fx; continue; }
-    result[k] = (curr[k]||0) - (prev[k]||0);
+    if(k==='_fx'){result._fx=curr._fx||prev._fx;continue;}
+    result[k]=(curr[k]||0)-(prev[k]||0);
   }
   return result;
-}
-
-function getMonthRanges(numMonths) {
-  // Returns array of {label, fromDate, toDate} for each month, newest first
-  const ranges = [];
-  const today = new Date();
-  for(let i = 0; i < numMonths; i++) {
-    const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
-    const fromDate = d.toISOString().slice(0, 10);
-    // For current month use today, otherwise use last day of month
-    const lastDay = i === 0
-      ? today
-      : new Date(d.getFullYear(), d.getMonth() + 1, 0);
-    const toDate = lastDay.toISOString().slice(0, 10);
-    const label = d.toLocaleDateString('en-GB', {month: 'short', year: '2-digit'});
-    ranges.push({label, fromDate, toDate});
-  }
-  return ranges;
 }
 
 async function getBS(org) {
@@ -1032,96 +1054,6 @@ function renderFacilities(el) {
 // ── PERIODS VIEW
 let periodsState = { range: 'ytd', activeCol: null, data: null };
 
-// FY helper — UK FY starts April 1
-function getFYYear(toDateStr) {
-  const d = new Date(toDateStr);
-  return d.getMonth() >= 3 ? d.getFullYear() : d.getFullYear() - 1;
-}
-
-// Generation counter prevents stale renders from rapid clicking
-let _periodsGen = 0;
-
-async function loadPeriods(range) {
-  periodsState.range = range;
-  const myGen = ++_periodsGen; // claim this generation
-
-  const numMonths = {ytd: null, '1m': 1, '3m': 3, '6m': 6, '12m': 12}[range];
-  let months;
-  if(range === 'ytd') {
-    const today = new Date();
-    const fyStart = new Date(today.getFullYear(), 3, 1);
-    if(today < fyStart) fyStart.setFullYear(fyStart.getFullYear()-1);
-    const m = (today.getFullYear()-fyStart.getFullYear())*12+(today.getMonth()-fyStart.getMonth())+1;
-    months = getMonthRanges(Math.min(m, 12));
-  } else {
-    months = getMonthRanges(numMonths);
-  }
-
-  const el = $('main');
-  el.innerHTML = `<div style="text-align:center;padding:60px 0;color:var(--text3)">
-    <div style="margin-bottom:8px">Loading ${months.length} months…</div>
-    <div style="font-size:11px;opacity:.6">Fetching in batches to avoid rate limits</div>
-  </div>`;
-
-  try {
-    // Build toDate sequence: one per month + one extra (month before oldest)
-    const toDateList = months.map(m => m.toDate);
-    const oldestFrom = new Date(months[months.length-1].fromDate);
-    oldestFrom.setDate(0);
-    toDateList.push(oldestFrom.toISOString().slice(0,10));
-
-    // Fetch in batches of 3 (one month = 3 orgs) to stay within Netlify concurrency limits
-    // This prevents rate-limit failures that cause everything to return {}
-    const allYTDs = [];
-    for(let i = 0; i < toDateList.length; i++) {
-      if(myGen !== _periodsGen) return; // another click happened — abort
-      const d = toDateList[i];
-      const [uk, bv, ard] = await Promise.all([
-        getPnLYTD('uk',  d).catch(()=>({})),
-        getPnLYTD('bv',  d).catch(()=>({})),
-        getPnLYTD('ard', d).catch(()=>({})),
-      ]);
-      allYTDs.push([uk, bv, ard]);
-
-      // Update progress
-      if(myGen === _periodsGen) {
-        el.innerHTML = `<div style="text-align:center;padding:60px 0;color:var(--text3)">
-          <div style="margin-bottom:8px">Loading ${months.length} months… (${i+1}/${toDateList.length})</div>
-          <div style="height:4px;background:var(--bg3);border-radius:2px;width:200px;margin:8px auto">
-            <div style="height:4px;background:var(--accent);border-radius:2px;width:${Math.round((i+1)/toDateList.length*100)}%"></div>
-          </div>
-        </div>`;
-      }
-    }
-
-    if(myGen !== _periodsGen) return; // stale — another request is in flight
-
-    // Compute monthly = YTD[i] - YTD[i+1], with FY boundary detection
-    const monthlyData = months.map((m, i) => {
-      const currFY = getFYYear(toDateList[i]);
-      const prevFY = getFYYear(toDateList[i+1]);
-      // FY boundary (e.g. April 2026 vs March 2026): first month of new FY = YTD is already monthly
-      const isFYBoundary = currFY !== prevFY;
-      return {
-        label:    m.label,
-        fromDate: m.fromDate,
-        toDate:   m.toDate,
-        uk:  isFYBoundary ? allYTDs[i][0] : subtractPnL(allYTDs[i][0], allYTDs[i+1][0]),
-        bv:  isFYBoundary ? allYTDs[i][1] : subtractPnL(allYTDs[i][1], allYTDs[i+1][1]),
-        ard: isFYBoundary ? allYTDs[i][2] : subtractPnL(allYTDs[i][2], allYTDs[i+1][2]),
-      };
-    });
-
-    periodsState.data = {monthlyData};
-    periodsState.activeCol = 0;
-    renderPeriods(el);
-  } catch(err) {
-    if(myGen === _periodsGen) {
-      el.innerHTML = `<div style="color:var(--red);padding:40px">Error: ${err.message}</div>`;
-    }
-  }
-}
-
 function calcMonthPnL(uk, bv, ard, fx) {
   const c = v => (v||0)*fx;
   const g = (obj, k) => obj[k]||0;
@@ -1155,54 +1087,107 @@ function calcMonthPnL(uk, bv, ard, fx) {
   const gpPct     = extSales>0 ? gp/extSales : 0;
 
   return {ukSales, ukInterco, ukGP, ukAdmin, ukNet, ukOther,
-          bvExtGBP:c(bvExt), bvGPGBP:c(bvGross), bvNetGBP:c(bvNet),
+          bvExtGBP:c(bvExt), bvIntercoEUR:bvInterco, bvGPGBP:c(bvGross), bvNetGBP:c(bvNet),
           ardInc, ardNet, extSales, gp, net, gpPct};
+}
+
+// ── PERIODS VIEW
+let _periodsGen = 0;
+
+async function loadPeriods(range) {
+  periodsState.range = range;
+  const myGen = ++_periodsGen;
+
+  // Calculate how many months to show
+  let numPeriods;
+  if(range==='ytd') {
+    const today=new Date(), fyStart=new Date(today.getFullYear(),3,1);
+    if(today<fyStart) fyStart.setFullYear(fyStart.getFullYear()-1);
+    numPeriods=Math.min((today.getFullYear()-fyStart.getFullYear())*12+(today.getMonth()-fyStart.getMonth())+1,12);
+  } else {
+    numPeriods={'1m':1,'3m':3,'6m':6,'12m':12}[range]||3;
+  }
+
+  const el=$('main');
+  el.innerHTML=`<div style="text-align:center;padding:60px 0;color:var(--text3)">
+    Loading ${numPeriods} months from Xero… <span style="font-size:11px;opacity:.6">(3 API calls)</span>
+  </div>`;
+
+  try {
+    // Fetch N+1 periods per org (extra period needed as baseline for oldest month subtraction)
+    // Using Xero's periods API: each column = YTD from FY start to that period end
+    // Individual month = YTD[col_i] - YTD[col_i+1]
+    // Exception: first month of new FY (April) = use YTD as-is (it IS just that month)
+    const fetch = (org) => fetchPeriodsPnL(org, numPeriods+1).catch(()=>({headers:[],rows:{}}));
+    const [ukM, bvM, ardM] = await Promise.all([fetch('uk'), fetch('bv'), fetch('ard')]);
+
+    if(myGen!==_periodsGen) return;
+
+    const n = Math.min(numPeriods, Math.max(ukM.headers.length-1, 0));
+    if(n===0) { el.innerHTML='<div style="color:var(--red);padding:40px">No data returned from Xero. Please try refreshing the main Refresh button first.</div>'; return; }
+
+    const headers = ukM.headers.slice(0, n);
+
+    const monthlyData = headers.map((header, i) => {
+      const currFY = parseHeaderFY(header);
+      const nextFY  = parseHeaderFY(ukM.headers[i+1]||'');
+      // FY boundary = April crosses to March (new FY vs old FY)
+      // At boundary, the column already represents just that month (first of new FY)
+      const isFYBoundary = nextFY>0 && currFY!==nextFY;
+
+      const ukC=getColObj(ukM.rows,i), bvC=getColObj(bvM.rows,i), ardC=getColObj(ardM.rows,i);
+
+      if(isFYBoundary) return {label:header, uk:ukC, bv:bvC, ard:ardC};
+
+      const ukP=getColObj(ukM.rows,i+1), bvP=getColObj(bvM.rows,i+1), ardP=getColObj(ardM.rows,i+1);
+      return {
+        label: header,
+        uk:  subtractPnL(ukC,ukP),
+        bv:  subtractPnL(bvC,bvP),
+        ard: subtractPnL(ardC,ardP),
+      };
+    });
+
+    periodsState.data={monthlyData};
+    periodsState.activeCol=0;
+    renderPeriods(el);
+  } catch(err) {
+    if(myGen===_periodsGen) el.innerHTML=`<div style="color:var(--red);padding:40px">Error: ${err.message}</div>`;
+  }
 }
 
 function renderPeriods(el) {
   if(!S.data) return;
-  const {monthlyData} = periodsState.data;
-  const fx = S.data.fx;
-  const n = monthlyData.length;
-  const activeCol = periodsState.activeCol ?? 0;
+  const {monthlyData}=periodsState.data;
+  const fx=S.data.fx;
+  const n=monthlyData.length;
+  const activeCol=periodsState.activeCol??0;
 
-  // Build consolidated monthly figures using individual monthly API data
-  const months = monthlyData.map(m => ({
-    h: m.label,
-    ...calcMonthPnL(m.uk, m.bv, m.ard, fx)
-  }));
+  const months=monthlyData.map(m=>({h:m.label,...calcMonthPnL(m.uk,m.bv,m.ard,fx)}));
+  const headers=months.map(m=>m.h);
 
-  const headers = months.map(m=>m.h);
-
-  const thCols = headers.map((h,i) =>
-    `<th class="${i===activeCol?'active-col':''}" onclick="periodsState.activeCol=${i};renderPeriods($('main'))" style="cursor:pointer">${h}</th>`
+  const thCols=headers.map((h,i)=>
+    `<th class="${i===activeCol?'active-col':''}" onclick="periodsState.activeCol=${i};renderPeriods($('main'))" style="cursor:pointer;white-space:nowrap">${h}</th>`
   ).join('');
 
-  const dataRow = (label, vals, cls='', indent=false) => {
-    const tds = vals.map((v,i) =>
-      `<td class="${i===activeCol?'vp':''}" style="${i===activeCol?'background:rgba(124,111,224,.08);font-weight:600':''}">${v==null?'—':fmtF(v)}</td>`
+  const pctRow=(label,vals,indent=false)=>{
+    const tds=vals.map((v,i)=>
+      `<td class="mt" style="${i===activeCol?'background:rgba(124,111,224,.08)':''}${indent?';padding-left:24px':''}">${fmtP(v)}</td>`
     ).join('');
-    return `<tr class="${cls}"><td style="text-align:left;${indent?'padding-left:24px':''}">${label}</td>${tds}</tr>`;
+    return `<tr><td style="text-align:left;${indent?'padding-left:24px':''};color:var(--text3)">${label}</td>${tds}</tr>`;
+  };
+  const dataRow=(label,vals,cls='',pos=false,indent=false)=>{
+    const tds=vals.map((v,i)=>{
+      const col=pos?(v>=0?'vp':'vn'):vc(v);
+      return `<td class="${col}" style="${i===activeCol?'background:rgba(124,111,224,.08);font-weight:600':''}">${v==null?'—':fmtF(v)}</td>`;
+    }).join('');
+    return `<tr class="${cls}"><td style="text-align:left;${indent?'padding-left:22px':''}">${label}</td>${tds}</tr>`;
   };
 
-  const gpRow = (label, vals, cls='') => {
-    const tds = vals.map((v,i) =>
-      `<td class="${v<0?'vn':'vp'}" style="${i===activeCol?'background:rgba(124,111,224,.08);font-weight:600':''}">${fmtF(v)}</td>`
-    ).join('');
-    return `<tr class="${cls}"><td style="text-align:left">${label}</td>${tds}</tr>`;
-  };
-
-  const pctRow = (label, vals) => {
-    const tds = vals.map((v,i) =>
-      `<td class="mt" style="${i===activeCol?'background:rgba(124,111,224,.08)':''}">${fmtP(v)}</td>`
-    ).join('');
-    return `<tr><td style="text-align:left;color:var(--text3)">${label}</td>${tds}</tr>`;
-  };
-
-  el.innerHTML = `
+  el.innerHTML=`
   <div class="ph">
     <div class="pt">Periods — Monthly P&L</div>
-    <div class="ps">Click a column to highlight · All figures in £ · BV converted at ${fx.toFixed(4)}</div>
+    <div class="ps">Click column to highlight · All £ · BV @ ${fx.toFixed(4)} · GP% = GP ÷ External Sales</div>
   </div>
   <div class="period-bar">
     <span style="font-size:11px;color:var(--text3);margin-right:4px">Quick select:</span>
@@ -1215,22 +1200,25 @@ function renderPeriods(el) {
       <thead><tr><th>Metric</th>${thCols}</tr></thead>
       <tbody>
         <tr class="mtr-h"><td colspan="${n+1}">Consolidated Group</td></tr>
-        ${dataRow('External Sales', months.map(m=>m.extSales))}
-        ${gpRow('Gross Profit', months.map(m=>m.gp), 'mtr-t')}
-        ${pctRow('GP Margin %', months.map(m=>m.gpPct))}
-        ${gpRow('Net Profit', months.map(m=>m.net), 'mtr-t')}
+        ${dataRow('External Sales',months.map(m=>m.extSales),'',false)}
+        ${dataRow('Interco Sales',months.map(m=>(m.ukInterco||0)+((m.bvIntercoEUR||0)*fx)),'',false,true)}
+        ${dataRow('Gross Profit',months.map(m=>m.gp),'mtr-t',true)}
+        ${pctRow('GP Margin % (ext sales)',months.map(m=>m.gpPct))}
+        ${dataRow('Net Profit',months.map(m=>m.net),'mtr-t',true)}
         <tr class="mtr-h"><td colspan="${n+1}">UK Ltd</td></tr>
-        ${dataRow('External Sales', months.map(m=>m.ukSales))}
-        ${gpRow('Gross Profit', months.map(m=>m.ukGP))}
-        ${dataRow('Admin Costs', months.map(m=>m.ukAdmin))}
-        ${gpRow('Net Profit', months.map(m=>m.ukNet), 'mtr-t')}
-        <tr class="mtr-h"><td colspan="${n+1}">BV (£)</td></tr>
-        ${dataRow('External Sales', months.map(m=>m.bvExtGBP))}
-        ${gpRow('Gross Profit', months.map(m=>m.bvGPGBP))}
-        ${gpRow('Net Profit', months.map(m=>m.bvNetGBP), 'mtr-t')}
+        ${dataRow('External Sales',months.map(m=>m.ukSales),'',false)}
+        ${dataRow('Interco Sales',months.map(m=>m.ukInterco||0),'',false,true)}
+        ${dataRow('Gross Profit',months.map(m=>m.ukGP),'',true)}
+        ${dataRow('Admin Costs',months.map(m=>m.ukAdmin),'',false,true)}
+        ${dataRow('Net Profit',months.map(m=>m.ukNet),'mtr-t',true)}
+        <tr class="mtr-h"><td colspan="${n+1}">BV (€→£)</td></tr>
+        ${dataRow('External Sales',months.map(m=>m.bvExtGBP),'',false)}
+        ${dataRow('Interco Sales',months.map(m=>(m.bvIntercoEUR||0)*fx),'',false,true)}
+        ${dataRow('Gross Profit',months.map(m=>m.bvGPGBP),'',true)}
+        ${dataRow('Net Profit',months.map(m=>m.bvNetGBP),'mtr-t',true)}
         <tr class="mtr-h"><td colspan="${n+1}">ARD International</td></tr>
-        ${dataRow('Mgmt Fee', months.map(m=>m.ardInc))}
-        ${gpRow('Net Profit', months.map(m=>m.ardNet), 'mtr-t')}
+        ${dataRow('Mgmt Fee',months.map(m=>m.ardInc),'',false)}
+        ${dataRow('Net Profit',months.map(m=>m.ardNet),'mtr-t',true)}
       </tbody>
     </table>
   </div>`;
