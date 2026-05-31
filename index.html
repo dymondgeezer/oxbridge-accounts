@@ -1118,35 +1118,23 @@ async function loadPeriods(range) {
     // Using Xero's periods API: each column = YTD from FY start to that period end
     // Individual month = YTD[col_i] - YTD[col_i+1]
     // Exception: first month of new FY (April) = use YTD as-is (it IS just that month)
-    const fetch = (org) => fetchPeriodsPnL(org, numPeriods+1).catch(()=>({headers:[],rows:{}}));
+    const fetch = (org) => fetchPeriodsPnL(org, numPeriods).catch(()=>({headers:[],rows:{}}));
     const [ukM, bvM, ardM] = await Promise.all([fetch('uk'), fetch('bv'), fetch('ard')]);
 
     if(myGen!==_periodsGen) return;
 
-    const n = Math.min(numPeriods, Math.max(ukM.headers.length-1, 0));
+    const n = Math.min(numPeriods, Math.max(ukM.headers.length, 0));
     if(n===0) { el.innerHTML='<div style="color:var(--red);padding:40px">No data returned from Xero. Please try refreshing the main Refresh button first.</div>'; return; }
 
     const headers = ukM.headers.slice(0, n);
 
-    const monthlyData = headers.map((header, i) => {
-      const currFY = parseHeaderFY(header);
-      const nextFY  = parseHeaderFY(ukM.headers[i+1]||'');
-      // FY boundary = April crosses to March (new FY vs old FY)
-      // At boundary, the column already represents just that month (first of new FY)
-      const isFYBoundary = nextFY>0 && currFY!==nextFY;
-
-      const ukC=getColObj(ukM.rows,i), bvC=getColObj(bvM.rows,i), ardC=getColObj(ardM.rows,i);
-
-      if(isFYBoundary) return {label:header, uk:ukC, bv:bvC, ard:ardC};
-
-      const ukP=getColObj(ukM.rows,i+1), bvP=getColObj(bvM.rows,i+1), ardP=getColObj(ardM.rows,i+1);
-      return {
-        label: header,
-        uk:  subtractPnL(ukC,ukP),
-        bv:  subtractPnL(bvC,bvP),
-        ard: subtractPnL(ardC,ardP),
-      };
-    });
+    // The periods API returns INDIVIDUAL monthly figures per column — use directly, no subtraction
+    const monthlyData = headers.map((header, i) => ({
+      label: header,
+      uk:  getColObj(ukM.rows, i),
+      bv:  getColObj(bvM.rows, i),
+      ard: getColObj(ardM.rows, i),
+    }));
 
     periodsState.data={monthlyData};
     periodsState.activeCol=0;
