@@ -525,6 +525,13 @@ async function xGet(org, path) {
   return r.json();
 }
 
+function getFYYear(dateStr) {
+  const d = new Date(dateStr);
+  const m = d.getMonth(); // 0=Jan ... 3=Apr
+  // FY starts 1 April. Jan-Mar (months 0-2) belong to FY that started previous calendar year.
+  return m >= 3 ? d.getFullYear() : d.getFullYear() - 1;
+}
+
 async function getPnL(org) {
   // Pass fromDate = current FY April start so Xero returns correct YTD
   const to = new Date().toISOString().slice(0,10);
@@ -653,7 +660,6 @@ async function refreshAll() {
 
     // FX from BV BS footer (XE.com rate)
     const fx = bvBS._fx || 0.866122;
-    try { await getPnL('uk'); alert('UK P&L OK'); } catch(e) { alert('UK P&L ERROR: '+e.message); }
     $('fx-disp').textContent = fx.toFixed(4);
     const c = v => (v||0)*fx;
 
