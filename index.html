@@ -535,47 +535,28 @@ async function getPnL(org) {
   return parseReport(data);
 }
 
-async function getPnLMonthly(org, fromDate, toDate) {
-  // Calculate number of months between dates
-  const from = new Date(fromDate);
-  const to   = new Date(toDate);
-  const months = (to.getFullYear()-from.getFullYear())*12 + (to.getMonth()-from.getMonth()) + 1;
-  const periods = Math.min(Math.max(months, 1), 12);
-  const data = await xGet(org,
-    `/Reports/ProfitAndLoss?fromDate=${fromDate}&toDate=${toDate}&periods=${periods}&timeframe=MONTH`
-  );
-  return parseReportMonthly(data, periods);
+async function getPnLForMonth(org, fromDate, toDate) {
+  // Individual month call - no periods parameter = true monthly figure
+  const data = await xGet(org, `/Reports/ProfitAndLoss?fromDate=${fromDate}&toDate=${toDate}`);
+  return parseReport(data);
 }
 
-function parseReportMonthly(data, periods) {
-  // Returns { headers: ['Apr 2026', 'May 2026',...], rows: { 'Sales': [v1,v2,...], ... } }
-  const report = data.Reports?.[0];
-  if(!report) return {headers:[], rows:{}};
-
-  // Extract column headers from the Header row
-  let headers = [];
-  const headerRow = report.Rows?.find(r => r.RowType === 'Header');
-  if(headerRow) {
-    headers = headerRow.Cells?.slice(1).map(c => c.Value||'') || [];
+function getMonthRanges(numMonths) {
+  // Returns array of {label, fromDate, toDate} for each month, newest first
+  const ranges = [];
+  const today = new Date();
+  for(let i = 0; i < numMonths; i++) {
+    const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
+    const fromDate = d.toISOString().slice(0, 10);
+    // For current month use today, otherwise use last day of month
+    const lastDay = i === 0
+      ? today
+      : new Date(d.getFullYear(), d.getMonth() + 1, 0);
+    const toDate = lastDay.toISOString().slice(0, 10);
+    const label = d.toLocaleDateString('en-GB', {month: 'short', year: '2-digit'});
+    ranges.push({label, fromDate, toDate});
   }
-
-  const rows = {};
-  function walk(rowList) {
-    if(!rowList) return;
-    for(const row of rowList) {
-      if(row.RowType === 'Row' && row.Cells?.length >= 2) {
-        const k = row.Cells[0]?.Value?.trim();
-        if(k) {
-          rows[k] = row.Cells.slice(1).map(c =>
-            parseFloat((c.Value||'').replace(/[,\s]/g,''))||0
-          );
-        }
-      }
-      if(row.Rows) walk(row.Rows);
-    }
-  }
-  walk(report.Rows);
-  return {headers, rows};
+  return ranges;
 }
 
 async function getBS(org) {
@@ -1039,94 +1020,104 @@ let periodsState = { range: 'ytd', activeCol: null, data: null };
 
 async function loadPeriods(range) {
   periodsState.range = range;
-  const today = new Date();
-  let fromDate, toDate = today.toISOString().slice(0,10);
+  const numMonths = {ytd: null, '1m': 1, '3m': 3, '6m': 6, '12m': 12}[range];
 
+  // For YTD calculate months since April 1
+  let months;
   if(range === 'ytd') {
+    const today = new Date();
     const fyStart = new Date(today.getFullYear(), 3, 1);
     if(today < fyStart) fyStart.setFullYear(fyStart.getFullYear()-1);
-    fromDate = fyStart.toISOString().slice(0,10);
-  } else if(range === '3m') {
-    const d = new Date(today); d.setMonth(d.getMonth()-2); d.setDate(1);
-    fromDate = d.toISOString().slice(0,10);
-  } else if(range === '6m') {
-    const d = new Date(today); d.setMonth(d.getMonth()-5); d.setDate(1);
-    fromDate = d.toISOString().slice(0,10);
-  } else if(range === '12m') {
-    const d = new Date(today); d.setMonth(d.getMonth()-11); d.setDate(1);
-    fromDate = d.toISOString().slice(0,10);
-  } else if(range === '1m') {
-    const d = new Date(today); d.setDate(1);
-    fromDate = d.toISOString().slice(0,10);
+    const m = (today.getFullYear()-fyStart.getFullYear())*12+(today.getMonth()-fyStart.getMonth())+1;
+    months = getMonthRanges(Math.min(m, 12));
+  } else {
+    months = getMonthRanges(numMonths);
   }
 
   const el = $('main');
-  el.innerHTML = `<div style="text-align:center;padding:60px 0;color:var(--text3)">Loading period data from Xero...</div>`;
+  el.innerHTML = `<div style="text-align:center;padding:60px 0;color:var(--text3)">
+    Loading ${months.length} months from Xero...<br>
+    <span style="font-size:11px;opacity:.6">(${months.length * 3} API calls — please wait)</span>
+  </div>`;
 
   try {
-    const [ukM, bvM, ardM] = await Promise.all([
-      getPnLMonthly('uk', fromDate, toDate),
-      getPnLMonthly('bv', fromDate, toDate),
-      getPnLMonthly('ard', fromDate, toDate),
-    ]);
-    periodsState.data = {ukM, bvM, ardM, fromDate, toDate};
-    periodsState.activeCol = (ukM.headers.length || 1) - 1; // default to latest month
+    // Fetch all months in parallel - individual calls per month for true monthly figures
+    const results = await Promise.all(
+      months.map(m => Promise.all([
+        getPnLForMonth('uk',  m.fromDate, m.toDate).catch(()=>({})),
+        getPnLForMonth('bv',  m.fromDate, m.toDate).catch(()=>({})),
+        getPnLForMonth('ard', m.fromDate, m.toDate).catch(()=>({})),
+      ]))
+    );
+
+    const monthlyData = months.map((m, i) => ({
+      label:  m.label,
+      fromDate: m.fromDate,
+      toDate:   m.toDate,
+      uk:  results[i][0],
+      bv:  results[i][1],
+      ard: results[i][2],
+    }));
+
+    periodsState.data = {monthlyData};
+    periodsState.activeCol = 0; // newest month first
     renderPeriods(el);
   } catch(err) {
     el.innerHTML = `<div style="color:var(--red);padding:40px">${err.message}</div>`;
   }
 }
 
+function calcMonthPnL(uk, bv, ard, fx) {
+  const c = v => (v||0)*fx;
+  const g = (obj, k) => obj[k]||0;
+
+  const ukSales   = g(uk,'Sales');
+  const ukInterco = g(uk,'Sales (inter company)');
+  const ukCOS     = ['Purchases','Purchase (inter company)','Logistic Costs','Damage/Shortage of goods','Plastic Packaging Tax','Warehouse Costs'].reduce((s,k)=>s+g(uk,k),0);
+  const ukGP      = ukSales + ukInterco - ukCOS;
+  const ukExclude = new Set(['Sales','Sales (inter company)','Purchases','Purchase (inter company)','Logistic Costs','Damage/Shortage of goods','Plastic Packaging Tax','Warehouse Costs','Inter-entity BV TP Adjustment','Sundry Receipts','Gross Profit','Net Profit','Foreign Currency Gains and Losses','Total Turnover','Total Cost of Sales','Total Administrative Costs','Total Other Income','Operating Profit','Profit on Ordinary Activities Before Taxation','Profit after Taxation','_fx']);
+  const ukAdmin   = Object.entries(uk).filter(([k])=>!ukExclude.has(k)).reduce((s,[,v])=>s+v,0);
+  const ukOther   = g(uk,'Inter-entity BV TP Adjustment') + g(uk,'Sundry Receipts');
+  const ukNet     = ukGP - ukAdmin + ukOther;
+
+  const bvExt     = g(bv,'External Sales');
+  const bvInterco = g(bv,'Inter Co Sales');
+  const bvCOS     = ['External COGS','Inter Co COGS','Logistic Costs','Warehouse Costs','External COGS - Import Duties','Labelling','Damage/Shortage of goods'].reduce((s,k)=>s+g(bv,k),0);
+  const bvGross   = bvExt + bvInterco - bvCOS;
+  const bvExclude = new Set(['External Sales','Inter Co Sales','External COGS','Inter Co COGS','Logistic Costs','Warehouse Costs','External COGS - Import Duties','Labelling','Damage/Shortage of goods','Gross Profit','Net Profit','Total Trading Income','Total Cost of Sales','Total Operating Expenses','_fx']);
+  const bvExp     = Object.entries(bv).filter(([k])=>!bvExclude.has(k)).reduce((s,[,v])=>s+v,0);
+  const bvNet     = bvGross - bvExp;
+
+  const ardInc    = g(ard,'Sales');
+  const ardCOS2   = g(ard,'Direct Wages');
+  const ardExclude= new Set(['Sales','Direct Wages','Gross Profit','Net Profit','Total Turnover','Total Cost of Sales','Total Administrative Costs','Operating Profit','Profit on Ordinary Activities Before Taxation','Profit after Taxation','_fx']);
+  const ardAdmin  = Object.entries(ard).filter(([k])=>!ardExclude.has(k)).reduce((s,[,v])=>s+v,0);
+  const ardNet    = ardInc - ardCOS2 - ardAdmin;
+
+  const extSales  = ukSales + c(bvExt);
+  const gp        = ukGP + c(bvGross);
+  const net       = ukNet + c(bvNet) + ardNet;
+  const gpPct     = extSales>0 ? gp/extSales : 0;
+
+  return {ukSales, ukInterco, ukGP, ukAdmin, ukNet, ukOther,
+          bvExtGBP:c(bvExt), bvGPGBP:c(bvGross), bvNetGBP:c(bvNet),
+          ardInc, ardNet, extSales, gp, net, gpPct};
+}
+
 function renderPeriods(el) {
   if(!S.data) return;
-  const {ukM, bvM, ardM} = periodsState.data;
+  const {monthlyData} = periodsState.data;
   const fx = S.data.fx;
-  const c = v => (v||0)*fx;
-  const headers = ukM.headers;
-  const n = headers.length;
-  const activeCol = periodsState.activeCol ?? n-1;
+  const n = monthlyData.length;
+  const activeCol = periodsState.activeCol ?? 0;
 
-  // Build consolidated monthly figures
-  const ukR = ukM.rows, bvR = bvM.rows, ardR = ardM.rows;
+  // Build consolidated monthly figures using individual monthly API data
+  const months = monthlyData.map(m => ({
+    h: m.label,
+    ...calcMonthPnL(m.uk, m.bv, m.ard, fx)
+  }));
 
-  const getCol = (rows, key, col) => (rows[key]||[])[col]||0;
-
-  // For each month column build consolidated P&L
-  const months = headers.map((h, i) => {
-    const ukSales  = getCol(ukR,'Sales',i);
-    const ukInterco= getCol(ukR,'Sales (inter company)',i);
-    const ukCOS    = ['Purchases','Purchase (inter company)','Logistic Costs','Damage/Shortage of goods','Plastic Packaging Tax','Warehouse Costs']
-                     .reduce((s,k)=>s+getCol(ukR,k,i),0);
-    const ukGP     = ukSales+ukInterco-ukCOS;
-    const ukExclude= new Set(['Sales','Sales (inter company)','Purchases','Purchase (inter company)','Logistic Costs','Damage/Shortage of goods','Plastic Packaging Tax','Warehouse Costs','Inter-entity BV TP Adjustment','Sundry Receipts','Gross Profit','Net Profit','Foreign Currency Gains and Losses','Total Turnover','Total Cost of Sales','Total Administrative Costs','Total Other Income','Operating Profit','Profit on Ordinary Activities Before Taxation','Profit after Taxation','_fx']);
-    const ukAdmin  = Object.entries(ukR).filter(([k])=>!ukExclude.has(k)).reduce((s,[k,v])=>s+(v[i]||0),0);
-    const ukOther  = getCol(ukR,'Inter-entity BV TP Adjustment',i)+getCol(ukR,'Sundry Receipts',i);
-    const ukNet    = ukGP - ukAdmin + ukOther;
-
-    const bvExt    = getCol(bvR,'External Sales',i);
-    const bvInterco= getCol(bvR,'Inter Co Sales',i);
-    const bvCOS    = ['External COGS','Inter Co COGS','Logistic Costs','Warehouse Costs','External COGS - Import Duties','Labelling','Damage/Shortage of goods']
-                     .reduce((s,k)=>s+getCol(bvR,k,i),0);
-    const bvGross  = bvExt+bvInterco-bvCOS;
-    const bvExclude= new Set(['External Sales','Inter Co Sales','External COGS','Inter Co COGS','Logistic Costs','Warehouse Costs','External COGS - Import Duties','Labelling','Damage/Shortage of goods','Gross Profit','Net Profit','Total Trading Income','Total Cost of Sales','Total Operating Expenses','_fx']);
-    const bvExp    = Object.entries(bvR).filter(([k])=>!bvExclude.has(k)).reduce((s,[k,v])=>s+(v[i]||0),0);
-    const bvNet    = bvGross - bvExp;
-
-    const ardInc   = getCol(ardR,'Sales',i);
-    const ardCOS   = getCol(ardR,'Direct Wages',i);
-    const ardExclude= new Set(['Sales','Direct Wages','Gross Profit','Net Profit','Total Turnover','Total Cost of Sales','Total Administrative Costs','Operating Profit','Profit on Ordinary Activities Before Taxation','Profit after Taxation','_fx']);
-    const ardAdmin = Object.entries(ardR).filter(([k])=>!ardExclude.has(k)).reduce((s,[k,v])=>s+(v[i]||0),0);
-    const ardNet   = ardInc - ardCOS - ardAdmin;
-
-    const extSales = ukSales + c(bvExt);
-    const gp       = ukGP + c(bvGross);
-    const net      = ukNet + c(bvNet) + ardNet;
-    const gpPct    = extSales>0 ? gp/extSales : 0;
-
-    return {h, ukSales, ukInterco, ukGP, ukAdmin, ukNet, ukOther,
-            bvExtGBP:c(bvExt), bvGPGBP:c(bvGross), bvNetGBP:c(bvNet),
-            ardInc, ardNet, extSales, gp, net, gpPct};
-  });
+  const headers = months.map(m=>m.h);
 
   const thCols = headers.map((h,i) =>
     `<th class="${i===activeCol?'active-col':''}" onclick="periodsState.activeCol=${i};renderPeriods($('main'))" style="cursor:pointer">${h}</th>`
