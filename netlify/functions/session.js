@@ -11,7 +11,12 @@ export const handler = async (event) => {
     return { statusCode: 401, body: JSON.stringify({ error: 'unauthorized' }) };
   }
 
-  const store = getStore({ name: 'xero-auth', consistency: 'strong' });
+  const store = getStore({
+    name: 'xero-auth',
+    consistency: 'strong',
+    siteID: process.env.BLOBS_SITE_ID || process.env.SITE_ID,
+    token: process.env.BLOBS_TOKEN,
+  });
   let bundle = await store.get('tokens', { type: 'json' });
   if (!bundle || !bundle.refresh_token) {
     return { statusCode: 409, body: JSON.stringify({ error: 'not_connected' }) };

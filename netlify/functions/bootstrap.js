@@ -70,7 +70,12 @@ export const handler = async (event) => {
     }
   }
 
-  const store = getStore({ name: 'xero-auth', consistency: 'strong' });
+  const store = getStore({
+    name: 'xero-auth',
+    consistency: 'strong',
+    siteID: process.env.BLOBS_SITE_ID || process.env.SITE_ID,
+    token: process.env.BLOBS_TOKEN,
+  });
   await store.setJSON('tokens', {
     refresh_token: t.refresh_token,
     access_token: t.access_token,
