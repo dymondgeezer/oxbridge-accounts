@@ -714,6 +714,18 @@ async function refreshAll() {
     const consNet = ukNet + c(bvNetEUR) + ardNet;
     const gpPct   = consExt>0 ? consGP/consExt : 0;
 
+    // ── Product (cash) margin — matches management accounts: Sales − product COGS only
+    // (Purchases / COGS lines; excludes logistics, warehouse, duty, labelling, damage, packaging tax)
+    const ukProdCOS    = (ukPL['Purchases']||0) + (ukPL['Purchase (inter company)']||0);
+    const ukMargin     = ukTotalSales - ukProdCOS;
+    const ukMarginPct  = ukExtSales>0 ? ukMargin/ukExtSales : 0;
+    const bvProdCOSEUR = (bvPL['External COGS']||0) + (bvPL['Inter Co COGS']||0);
+    const bvMarginEUR  = (bvExtEUR + bvIntercoEUR) - bvProdCOSEUR;
+    const bvMarginGBP  = c(bvMarginEUR);
+    const bvMarginPct  = c(bvExtEUR)>0 ? bvMarginGBP/c(bvExtEUR) : 0;
+    const consMargin   = ukMargin + bvMarginGBP;
+    const marginPct    = consExt>0 ? consMargin/consExt : 0;
+
     // ── Balance Sheet
     const ukStock = ukBS['Stock on hand']||0;
     const bvStock = c(bvBS['Stock on Hand']||0);
@@ -758,11 +770,13 @@ async function refreshAll() {
       refreshedAt: new Date(), fx,
       rawPL: {uk: ukPL, bv: bvPL, ard: ardPL},
       uk:  {extSales:ukExtSales,interco:ukInterco,totalSales:ukTotalSales,
-            cos:ukCOS,gp:ukGP,admin:ukAdmin,net:ukNet,ret:ukRet,cy:ukCY},
+            cos:ukCOS,gp:ukGP,admin:ukAdmin,net:ukNet,ret:ukRet,cy:ukCY,
+            margin:ukMargin,marginPct:ukMarginPct},
       bv:  {extEUR:bvExtEUR,intercoEUR:bvIntercoEUR,extGBP:c(bvExtEUR),
-            gpGBP:c(bvGrossEUR),expGBP:c(bvExpEUR),netGBP:c(bvNetEUR),ret:bvRet,cy:bvCY},
+            gpGBP:c(bvGrossEUR),expGBP:c(bvExpEUR),netGBP:c(bvNetEUR),ret:bvRet,cy:bvCY,
+            margin:bvMarginGBP,marginPct:bvMarginPct},
       ard: {income:ardIncome,exp:ardAdmin,net:ardNet,ret:ardRet,cy:ardCY},
-      cons:{extSales:consExt,gp:consGP,net:consNet,gpPct,intercoElim:intercoTotal},
+      cons:{extSales:consExt,gp:consGP,net:consNet,gpPct,margin:consMargin,marginPct,intercoElim:intercoTotal},
       bs:  {ukStock,bvStock,ukDeb,bvDeb,ukCred,bvCred,ukCash,bvBank,ardCash,wc},
       cap: {ukRet,ukCY,bvRet,bvCY,ardRet,ardCY,distribTotal},
       fac: {
@@ -821,7 +835,7 @@ function renderOverview(el) {
   <div class="kgrid" style="grid-template-columns:repeat(6,1fr)">
     <div class="kcard"><div class="klabel">External Sales</div><div class="kval">${fmt(co.extSales)}</div><div class="ksub">excl. intercompany</div></div>
     <div class="kcard"><div class="klabel">Total Sales</div><div class="kval">${fmt(co.extSales+co.intercoElim)}</div><div class="ksub">incl. interco ${fmt(co.intercoElim)}</div></div>
-    <div class="kcard" style="border-color:var(--teal)"><div class="klabel">Margin %</div><div class="kval" style="color:var(--teal)">${fmtP(co.gpPct)}</div><div class="ksub">GP ${fmt(co.gp)} ÷ ext. sales</div></div>
+    <div class="kcard" style="border-color:var(--teal)"><div class="klabel">Margin %</div><div class="kval" style="color:var(--teal)">${fmtP(co.marginPct)}</div><div class="ksub">Product margin ${fmt(co.margin)} ÷ ext. sales</div></div>
     <div class="kcard"><div class="klabel">Net Profit</div><div class="kval ${co.net<0?'red':'green'}">${fmt(co.net)}</div><div class="ksub">All 3 entities combined</div></div>
     <div class="kcard"><div class="klabel">Working Capital</div><div class="kval">${fmt(d.bs.wc)}</div><div class="ksub">Stock+Debtors−Creditors</div></div>
     <div class="kcard" style="border-color:var(--accent)"><div class="klabel">Available for Dividend</div><div class="kval green">${fmt(d.cap.distribTotal)}</div><div class="ksub">Retained+CY, excl. share capital</div></div>
@@ -842,7 +856,7 @@ function renderOverview(el) {
       <div class="erow"><div class="elbl">Interco sales</div><div class="eval mt">${fmtF(uk.interco)}</div></div>
       <div class="erow"><div class="elbl">Total turnover</div><div class="eval">${fmtF(uk.totalSales)}</div></div>
       <div class="erow"><div class="elbl">Gross profit</div><div class="eval">${fmtF(uk.gp)}</div></div>
-      <div class="erow"><div class="elbl">Margin %</div><div class="eval" style="color:var(--teal)">${fmtP(uk.extSales>0?uk.gp/uk.extSales:0)}</div></div>
+      <div class="erow"><div class="elbl">Margin %</div><div class="eval" style="color:var(--teal)">${fmtP(uk.marginPct)}</div></div>
       <div class="erow"><div class="elbl">Total admin costs</div><div class="eval red">${fmtF(uk.admin)}</div></div>
       <div class="erow"><div class="elbl">Net profit</div><div class="eval ${uk.net<0?'red':'green'}">${fmtF(uk.net)}</div></div>
       <div class="erow"><div class="elbl">Retained earnings</div><div class="eval">${fmtF(uk.ret)}</div></div>
@@ -855,7 +869,7 @@ function renderOverview(el) {
       <div class="erow"><div class="elbl">Interco sales (£)</div><div class="eval mt">${fmtF(bv.intercoEUR*d.fx)}</div></div>
       <div class="erow"><div class="elbl">Total trading income (£)</div><div class="eval">${fmtF(bv.extGBP+bv.intercoEUR*d.fx)}</div></div>
       <div class="erow"><div class="elbl">Gross profit</div><div class="eval">${fmtF(bv.gpGBP)}</div></div>
-      <div class="erow"><div class="elbl">Margin %</div><div class="eval" style="color:var(--teal)">${fmtP(bv.extGBP>0?bv.gpGBP/bv.extGBP:0)}</div></div>
+      <div class="erow"><div class="elbl">Margin %</div><div class="eval" style="color:var(--teal)">${fmtP(bv.marginPct)}</div></div>
       <div class="erow"><div class="elbl">Net profit</div><div class="eval ${bv.netGBP<0?'red':'green'}">${fmtF(bv.netGBP)}</div></div>
       <div class="erow"><div class="elbl">Retained earnings</div><div class="eval">${fmtF(bv.ret)}</div></div>
       <div class="erow"><div class="elbl">Current year</div><div class="eval ${bv.cy<0?'red':'green'}">${fmtF(bv.cy)}</div></div>
@@ -1101,9 +1115,15 @@ function calcMonthPnL(uk, bv, ard, fx) {
   const net       = ukNet + c(bvNet) + ardNet;
   const gpPct     = extSales>0 ? gp/extSales : 0;
 
+  // Product (cash) margin — Sales − product COGS only (matches management accounts)
+  const ukMargin  = (ukSales + ukInterco) - (g(uk,'Purchases') + g(uk,'Purchase (inter company)'));
+  const bvMargin  = (bvExt + bvInterco) - (g(bv,'External COGS') + g(bv,'Inter Co COGS'));
+  const margin    = ukMargin + c(bvMargin);
+  const marginPct = extSales>0 ? margin/extSales : 0;
+
   return {ukSales, ukInterco, ukGP, ukAdmin, ukNet, ukOther,
           bvExtGBP:c(bvExt), bvIntercoEUR:bvInterco, bvGPGBP:c(bvGross), bvNetGBP:c(bvNet),
-          ardInc, ardNet, extSales, gp, net, gpPct};
+          ardInc, ardNet, extSales, gp, net, gpPct, margin, marginPct};
 }
 
 // ── PERIODS VIEW
@@ -1206,7 +1226,7 @@ function renderPeriods(el) {
         ${dataRow('External Sales',months.map(m=>m.extSales),'',false)}
         ${dataRow('Interco Sales',months.map(m=>(m.ukInterco||0)+((m.bvIntercoEUR||0)*fx)),'',false,true)}
         ${dataRow('Gross Profit',months.map(m=>m.gp),'mtr-t',true)}
-        ${pctRow('GP Margin % (ext sales)',months.map(m=>m.gpPct))}
+        ${pctRow('Margin % (ext sales)',months.map(m=>m.marginPct))}
         ${dataRow('Net Profit',months.map(m=>m.net),'mtr-t',true)}
         <tr class="mtr-h"><td colspan="${n+1}">UK Ltd</td></tr>
         ${dataRow('External Sales',months.map(m=>m.ukSales),'',false)}
