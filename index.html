@@ -638,7 +638,7 @@ function parseReport(data, label) {
     }
   }
   walk(data.Reports?.[0]?.Rows);
-  console.log('RAW REPORT:', JSON.stringify(data.Reports?.[0], null, 2));
+  console.log('RAW REPORT ['+(label||'?')+']:', JSON.stringify(data.Reports?.[0], null, 2));
   m._fx = fxEUR;
   return m;
 }
