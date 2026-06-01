@@ -145,11 +145,11 @@ code{background:var(--bg3);padding:2px 6px;border-radius:3px;font-size:11px;font
   </div>
   <div class="ntabs">
     <button class="ntab active" onclick="setView('overview')" id="tab-overview">Overview</button>
+    <button class="ntab" onclick="setView('periods')" id="tab-periods" disabled>Periods</button>
     <button class="ntab" onclick="setView('pnl')" id="tab-pnl" disabled>P&amp;L</button>
     <button class="ntab" onclick="setView('balance')" id="tab-balance" disabled>Balance Sheet</button>
     <button class="ntab" onclick="setView('capital')" id="tab-capital" disabled>Capital &amp; Reserves</button>
     <button class="ntab" onclick="setView('facilities')" id="tab-facilities" disabled>Facilities</button>
-    <button class="ntab" onclick="setView('periods')" id="tab-periods" disabled>Periods</button>
   </div>
   <div class="nright">
     <span class="pbadge" id="period-badge">Not connected</span>
@@ -818,9 +818,10 @@ function renderOverview(el) {
   el.innerHTML=`
   <div class="ph"><div class="pt">Group Overview — Live</div>
   <div class="ps">As at ${now} · EUR→GBP @ ${d.fx.toFixed(4)} · Interco eliminated: ${fmt(co.intercoElim)}</div></div>
-  <div class="kgrid" style="grid-template-columns:repeat(5,1fr)">
-    <div class="kcard"><div class="klabel">External Sales</div><div class="kval">${fmt(co.extSales)}</div><div class="ksub">GP: ${fmtP(co.gpPct)}</div></div>
-    <div class="kcard"><div class="klabel">Gross Profit</div><div class="kval ${co.gp<0?'red':''}">${fmt(co.gp)}</div><div class="ksub">${fmtP(co.gpPct)} of ext. sales</div></div>
+  <div class="kgrid" style="grid-template-columns:repeat(6,1fr)">
+    <div class="kcard"><div class="klabel">External Sales</div><div class="kval">${fmt(co.extSales)}</div><div class="ksub">excl. intercompany</div></div>
+    <div class="kcard"><div class="klabel">Total Sales</div><div class="kval">${fmt(co.extSales+co.intercoElim)}</div><div class="ksub">incl. interco ${fmt(co.intercoElim)}</div></div>
+    <div class="kcard" style="border-color:var(--teal)"><div class="klabel">Margin %</div><div class="kval" style="color:var(--teal)">${fmtP(co.gpPct)}</div><div class="ksub">GP ${fmt(co.gp)} ÷ ext. sales</div></div>
     <div class="kcard"><div class="klabel">Net Profit</div><div class="kval ${co.net<0?'red':'green'}">${fmt(co.net)}</div><div class="ksub">All 3 entities combined</div></div>
     <div class="kcard"><div class="klabel">Working Capital</div><div class="kval">${fmt(d.bs.wc)}</div><div class="ksub">Stock+Debtors−Creditors</div></div>
     <div class="kcard" style="border-color:var(--accent)"><div class="klabel">Available for Dividend</div><div class="kval green">${fmt(d.cap.distribTotal)}</div><div class="ksub">Retained+CY, excl. share capital</div></div>
@@ -838,7 +839,10 @@ function renderOverview(el) {
     <div class="ecard"><div class="eheader"><div class="sdot" style="background:var(--teal);width:7px;height:7px;border-radius:50%;flex-shrink:0"></div><div class="ename">Oxbridge Associates UK Ltd</div><div class="eccy">Trading·£</div></div>
     <div class="erows">
       <div class="erow"><div class="elbl">External sales</div><div class="eval">${fmtF(uk.extSales)}</div></div>
+      <div class="erow"><div class="elbl">Interco sales</div><div class="eval mt">${fmtF(uk.interco)}</div></div>
+      <div class="erow"><div class="elbl">Total turnover</div><div class="eval">${fmtF(uk.totalSales)}</div></div>
       <div class="erow"><div class="elbl">Gross profit</div><div class="eval">${fmtF(uk.gp)}</div></div>
+      <div class="erow"><div class="elbl">Margin %</div><div class="eval" style="color:var(--teal)">${fmtP(uk.extSales>0?uk.gp/uk.extSales:0)}</div></div>
       <div class="erow"><div class="elbl">Total admin costs</div><div class="eval red">${fmtF(uk.admin)}</div></div>
       <div class="erow"><div class="elbl">Net profit</div><div class="eval ${uk.net<0?'red':'green'}">${fmtF(uk.net)}</div></div>
       <div class="erow"><div class="elbl">Retained earnings</div><div class="eval">${fmtF(uk.ret)}</div></div>
@@ -847,8 +851,11 @@ function renderOverview(el) {
     <div class="ecard"><div class="eheader"><div class="sdot" style="background:var(--blue);width:7px;height:7px;border-radius:50%;flex-shrink:0"></div><div class="ename">Oxbridge Associates BV</div><div class="eccy">Trading·€→£@${d.fx.toFixed(4)}</div></div>
     <div class="erows">
       <div class="erow"><div class="elbl">Ext. sales (€)</div><div class="eval">${fmtE(bv.extEUR)}</div></div>
-      <div class="erow"><div class="elbl">Ext. sales (£)</div><div class="eval">${fmtF(bv.extGBP)}</div></div>
+      <div class="erow"><div class="elbl">External sales (£)</div><div class="eval">${fmtF(bv.extGBP)}</div></div>
+      <div class="erow"><div class="elbl">Interco sales (£)</div><div class="eval mt">${fmtF(bv.intercoEUR*d.fx)}</div></div>
+      <div class="erow"><div class="elbl">Total trading income (£)</div><div class="eval">${fmtF(bv.extGBP+bv.intercoEUR*d.fx)}</div></div>
       <div class="erow"><div class="elbl">Gross profit</div><div class="eval">${fmtF(bv.gpGBP)}</div></div>
+      <div class="erow"><div class="elbl">Margin %</div><div class="eval" style="color:var(--teal)">${fmtP(bv.extGBP>0?bv.gpGBP/bv.extGBP:0)}</div></div>
       <div class="erow"><div class="elbl">Net profit</div><div class="eval ${bv.netGBP<0?'red':'green'}">${fmtF(bv.netGBP)}</div></div>
       <div class="erow"><div class="elbl">Retained earnings</div><div class="eval">${fmtF(bv.ret)}</div></div>
       <div class="erow"><div class="elbl">Current year</div><div class="eval ${bv.cy<0?'red':'green'}">${fmtF(bv.cy)}</div></div>
