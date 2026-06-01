@@ -752,9 +752,14 @@ function goToSetup() { showConnect(); }
 function renderOverview(el) {
   const d=S.data, co=d.cons, uk=d.uk, bv=d.bv, ard=d.ard;
   const now=d.refreshedAt.toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'});
+  const _fyY=getFYYear(d.refreshedAt.toISOString().slice(0,10));
+  const _fmtD=dt=>dt.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'});
+  const _ytdFrom=_fmtD(new Date(_fyY,3,1)), _ytdTo=_fmtD(d.refreshedAt);
+  const _fyLabel=`FY ${_fyY}/${String((_fyY+1)%100).padStart(2,'0')}`;
   el.innerHTML=`
   <div class="ph"><div class="pt">Group Overview — Live</div>
-  <div class="ps">As at ${now} · data run ${d.refreshedAt.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})} · EUR→GBP @ ${d.fx.toFixed(4)} · Interco eliminated: ${fmt(co.intercoElim)}</div></div>
+  <div class="ps">As at ${now} · data run ${d.refreshedAt.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})} · EUR→GBP @ ${d.fx.toFixed(4)} · Interco eliminated: ${fmt(co.intercoElim)}</div>
+  <div class="ps" style="margin-top:4px"><strong style="color:var(--teal)">Year-to-date:</strong> ${_ytdFrom} – ${_ytdTo} (${_fyLabel}) — sales, margin &amp; profit are cumulative for this period; balance-sheet items are as at the run date.</div></div>
   <div class="kgrid" style="grid-template-columns:repeat(6,1fr)">
     <div class="kcard"><div class="klabel">External Sales</div><div class="kval">${fmt(co.extSales)}</div><div class="ksub">excl. intercompany</div></div>
     <div class="kcard"><div class="klabel">Total Sales</div><div class="kval">${fmt(co.extSales+co.intercoElim)}</div><div class="ksub">incl. interco ${fmt(co.intercoElim)}</div></div>
