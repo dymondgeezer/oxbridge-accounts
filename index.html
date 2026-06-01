@@ -164,9 +164,9 @@ code{background:var(--bg3);padding:2px 6px;border-radius:3px;font-size:11px;font
   <div class="sidebar">
     <div class="ssec">
       <div class="slabel">Connections</div>
-      <div class="sitem"><div class="sdot" id="dot-uk" style="background:var(--text3)"></div><div><div style="font-size:11px;font-weight:600">UK Ltd</div><div style="font-size:10px;color:var(--text3)" id="st-uk">Not connected</div></div></div>
-      <div class="sitem" style="margin-top:4px"><div class="sdot" id="dot-bv" style="background:var(--text3)"></div><div><div style="font-size:11px;font-weight:600">BV</div><div style="font-size:10px;color:var(--text3)" id="st-bv">Not connected</div></div></div>
-      <div class="sitem" style="margin-top:4px"><div class="sdot" id="dot-ard" style="background:var(--text3)"></div><div><div style="font-size:11px;font-weight:600">ARD</div><div style="font-size:10px;color:var(--text3)" id="st-ard">Not connected</div></div></div>
+      <div class="sitem"><div class="sdot" id="dot-uk" style="background:var(--text3)"></div><div><div style="font-size:11px;font-weight:600"><svg viewBox="0 0 60 30" width="14" height="9" style="vertical-align:middle;margin-right:5px;border-radius:1px" aria-hidden="true"><rect width="60" height="30" fill="#012169"/><path d="M0,0 L60,30 M60,0 L0,30" stroke="#fff" stroke-width="6"/><path d="M0,0 L60,30 M60,0 L0,30" stroke="#C8102E" stroke-width="2"/><path d="M30,0 V30 M0,15 H60" stroke="#fff" stroke-width="10"/><path d="M30,0 V30 M0,15 H60" stroke="#C8102E" stroke-width="6"/></svg>UK Ltd</div><div style="font-size:10px;color:var(--text3)" id="st-uk">Not connected</div></div></div>
+      <div class="sitem" style="margin-top:4px"><div class="sdot" id="dot-bv" style="background:var(--text3)"></div><div><div style="font-size:11px;font-weight:600"><svg viewBox="0 0 60 30" width="14" height="9" style="vertical-align:middle;margin-right:5px;border-radius:1px" aria-hidden="true"><rect width="60" height="10" fill="#AE1C28"/><rect y="10" width="60" height="10" fill="#F9F9F9"/><rect y="20" width="60" height="10" fill="#21468B"/></svg>BV</div><div style="font-size:10px;color:var(--text3)" id="st-bv">Not connected</div></div></div>
+      <div class="sitem" style="margin-top:4px"><div class="sdot" id="dot-ard" style="background:var(--text3)"></div><div><div style="font-size:11px;font-weight:600"><svg viewBox="0 0 60 30" width="14" height="9" style="vertical-align:middle;margin-right:5px;border-radius:1px" aria-hidden="true"><rect width="60" height="30" fill="#012169"/><path d="M0,0 L60,30 M60,0 L0,30" stroke="#fff" stroke-width="6"/><path d="M0,0 L60,30 M60,0 L0,30" stroke="#C8102E" stroke-width="2"/><path d="M30,0 V30 M0,15 H60" stroke="#fff" stroke-width="10"/><path d="M30,0 V30 M0,15 H60" stroke="#C8102E" stroke-width="6"/></svg>ARD</div><div style="font-size:10px;color:var(--text3)" id="st-ard">Not connected</div></div></div>
     </div>
     <div class="ssec"><div class="slabel">Last Refreshed</div><div style="font-size:11px;color:var(--text3);padding:0 6px" id="last-rt">—</div></div>
     <div class="ssec"><div class="slabel">EUR→GBP Rate</div><div style="font-size:15px;font-weight:700;padding:0 6px;color:var(--teal)" id="fx-disp">—</div></div>
@@ -199,6 +199,9 @@ const fmt  = v => { if(v==null||isNaN(v))return'—'; const a=Math.abs(v); let s
 const fmtP = v => v==null||isNaN(v)||!isFinite(v)?'—':(v*100).toFixed(1)+'%';
 const vc   = v => v>0?'vp':v<0?'vn':'';
 const $    = id => document.getElementById(id);
+// ── FLAGS (inline SVG so they render on every OS, incl. Windows)
+const FLAG_GB='<svg viewBox="0 0 60 30" width="15" height="10" style="vertical-align:middle;margin-right:5px;border-radius:1px;box-shadow:0 0 0 .5px rgba(0,0,0,.2)" aria-hidden="true"><rect width="60" height="30" fill="#012169"/><path d="M0,0 L60,30 M60,0 L0,30" stroke="#fff" stroke-width="6"/><path d="M0,0 L60,30 M60,0 L0,30" stroke="#C8102E" stroke-width="2"/><path d="M30,0 V30 M0,15 H60" stroke="#fff" stroke-width="10"/><path d="M30,0 V30 M0,15 H60" stroke="#C8102E" stroke-width="6"/></svg>';
+const FLAG_NL='<svg viewBox="0 0 60 30" width="15" height="10" style="vertical-align:middle;margin-right:5px;border-radius:1px;box-shadow:0 0 0 .5px rgba(0,0,0,.2)" aria-hidden="true"><rect width="60" height="10" fill="#AE1C28"/><rect y="10" width="60" height="10" fill="#F9F9F9"/><rect y="20" width="60" height="10" fill="#21468B"/></svg>';
 function toggleTheme() {
   const isLight = document.body.classList.toggle('light');
   localStorage.setItem('ox_theme', isLight ? 'light' : 'dark');
@@ -751,7 +754,7 @@ function renderOverview(el) {
   const now=d.refreshedAt.toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'});
   el.innerHTML=`
   <div class="ph"><div class="pt">Group Overview — Live</div>
-  <div class="ps">As at ${now} · EUR→GBP @ ${d.fx.toFixed(4)} · Interco eliminated: ${fmt(co.intercoElim)}</div></div>
+  <div class="ps">As at ${now} · data run ${d.refreshedAt.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})} · EUR→GBP @ ${d.fx.toFixed(4)} · Interco eliminated: ${fmt(co.intercoElim)}</div></div>
   <div class="kgrid" style="grid-template-columns:repeat(6,1fr)">
     <div class="kcard"><div class="klabel">External Sales</div><div class="kval">${fmt(co.extSales)}</div><div class="ksub">excl. intercompany</div></div>
     <div class="kcard"><div class="klabel">Total Sales</div><div class="kval">${fmt(co.extSales+co.intercoElim)}</div><div class="ksub">incl. interco ${fmt(co.intercoElim)}</div></div>
@@ -761,7 +764,7 @@ function renderOverview(el) {
     <div class="kcard" style="border-color:var(--accent)"><div class="klabel">Available for Dividend</div><div class="kval green">${fmt(d.cap.distribTotal)}</div><div class="ksub">Retained+CY, excl. share capital</div></div>
   </div>
   <div class="egrid">
-    <div class="ecard"><div class="eheader"><div class="sdot" style="background:var(--amber);width:7px;height:7px;border-radius:50%;flex-shrink:0"></div><div class="ename">ARD International</div><div class="eccy">Holding·£</div></div>
+    <div class="ecard"><div class="eheader"><div class="sdot" style="background:var(--amber);width:7px;height:7px;border-radius:50%;flex-shrink:0"></div><div class="ename">${FLAG_GB}ARD International</div><div class="eccy">Holding·£</div></div>
     <div class="erows">
       <div class="erow"><div class="elbl">Mgmt fee income</div><div class="eval green">${fmtF(ard.income)}</div></div>
       <div class="erow"><div class="elbl">Expenses</div><div class="eval red">${fmtF(ard.exp)}</div></div>
@@ -770,7 +773,7 @@ function renderOverview(el) {
       <div class="erow"><div class="elbl">Retained earnings</div><div class="eval">${fmtF(ard.ret)}</div></div>
       <div class="erow"><div class="elbl">Current year</div><div class="eval ${ard.cy<0?'red':'green'}">${fmtF(ard.cy)}</div></div>
     </div></div>
-    <div class="ecard"><div class="eheader"><div class="sdot" style="background:var(--teal);width:7px;height:7px;border-radius:50%;flex-shrink:0"></div><div class="ename">Oxbridge Associates UK Ltd</div><div class="eccy">Trading·£</div></div>
+    <div class="ecard"><div class="eheader"><div class="sdot" style="background:var(--teal);width:7px;height:7px;border-radius:50%;flex-shrink:0"></div><div class="ename">${FLAG_GB}Oxbridge Associates UK Ltd</div><div class="eccy">Trading·£</div></div>
     <div class="erows">
       <div class="erow"><div class="elbl">External sales</div><div class="eval">${fmtF(uk.extSales)}</div></div>
       <div class="erow"><div class="elbl">Interco sales</div><div class="eval mt">${fmtF(uk.interco)}</div></div>
@@ -782,7 +785,7 @@ function renderOverview(el) {
       <div class="erow"><div class="elbl">Retained earnings</div><div class="eval">${fmtF(uk.ret)}</div></div>
       <div class="erow"><div class="elbl">Current year</div><div class="eval ${uk.cy<0?'red':'green'}">${fmtF(uk.cy)}</div></div>
     </div></div>
-    <div class="ecard"><div class="eheader"><div class="sdot" style="background:var(--blue);width:7px;height:7px;border-radius:50%;flex-shrink:0"></div><div class="ename">Oxbridge Associates BV</div><div class="eccy">Trading·€→£@${d.fx.toFixed(4)}</div></div>
+    <div class="ecard"><div class="eheader"><div class="sdot" style="background:var(--blue);width:7px;height:7px;border-radius:50%;flex-shrink:0"></div><div class="ename">${FLAG_NL}Oxbridge Associates BV</div><div class="eccy">Trading·€→£@${d.fx.toFixed(4)}</div></div>
     <div class="erows">
       <div class="erow"><div class="elbl">Ext. sales (€)</div><div class="eval">${fmtE(bv.extEUR)}</div></div>
       <div class="erow"><div class="elbl">External sales (£)</div><div class="eval">${fmtF(bv.extGBP)}</div></div>
@@ -855,7 +858,7 @@ function renderPnL(el) {
   <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-bottom:18px">
 
     <div class="twrap" style="margin:0"><table class="ptable">
-      <thead><tr><th style="text-align:left;border-top:3px solid var(--teal)">UK Ltd</th><th style="border-top:3px solid var(--teal)">£ YTD</th></tr></thead>
+      <thead><tr><th style="text-align:left;border-top:3px solid var(--teal)">${FLAG_GB}UK Ltd</th><th style="border-top:3px solid var(--teal)">£ YTD</th></tr></thead>
       <tbody>
         <tr><td style="text-align:left">External Sales</td><td>${fmtF(uk.extSales)}</td></tr>
         <tr><td style="text-align:left">Interco Sales</td><td class="mt">${fmtF(uk.interco)}</td></tr>
@@ -871,7 +874,7 @@ function renderPnL(el) {
     </table></div>
 
     <div class="twrap" style="margin:0"><table class="ptable">
-      <thead><tr><th style="text-align:left;border-top:3px solid var(--blue)">BV (€→£)</th><th style="border-top:3px solid var(--blue)">£ YTD</th></tr></thead>
+      <thead><tr><th style="text-align:left;border-top:3px solid var(--blue)">${FLAG_NL}BV (€→£)</th><th style="border-top:3px solid var(--blue)">£ YTD</th></tr></thead>
       <tbody>
         <tr><td style="text-align:left">External Sales</td><td>${fmtF(bv.extGBP)}</td></tr>
         <tr><td style="text-align:left">Interco Sales</td><td class="mt">${fmtF(bv.intercoEUR*d.fx)}</td></tr>
@@ -888,7 +891,7 @@ function renderPnL(el) {
     </table></div>
 
     <div class="twrap" style="margin:0"><table class="ptable">
-      <thead><tr><th style="text-align:left;border-top:3px solid var(--amber)">ARD International</th><th style="border-top:3px solid var(--amber)">£ YTD</th></tr></thead>
+      <thead><tr><th style="text-align:left;border-top:3px solid var(--amber)">${FLAG_GB}ARD International</th><th style="border-top:3px solid var(--amber)">£ YTD</th></tr></thead>
       <tbody>
         <tr><td style="text-align:left">Mgmt Fee Income</td><td>${fmtF(ard.income)}</td></tr>
         <tr><td style="text-align:left">Direct Wages (COS)</td><td class="vn">${fmtF(raw.ard?.['Direct Wages']||0)}</td></tr>
@@ -992,9 +995,9 @@ function renderBalance(el) {
     <div class="kcard" style="border-color:var(--amber)"><div class="klabel">ARD Net Assets</div><div class="kval ${ardNA<0?'red':''}">${fmt(ardNA)}</div><div class="ksub">= Total Capital &amp; Reserves</div></div>
   </div>
   <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;align-items:start">
-    ${panel('uk','UK Ltd','£')}
-    ${panel('bv','BV (€→£)','£')}
-    ${panel('ard','ARD','£')}
+    ${panel('uk',FLAG_GB+'UK Ltd','£')}
+    ${panel('bv',FLAG_NL+'BV (€→£)','£')}
+    ${panel('ard',FLAG_GB+'ARD','£')}
   </div>`;
 }
 
@@ -1011,9 +1014,9 @@ function renderCapital(el) {
   <div class="twrap"><table class="ptable">
     <thead><tr><th style="text-align:left">Entity</th><th>Retained Earnings</th><th>Current Year</th><th>Distributable Total</th></tr></thead>
     <tbody>
-      <tr><td style="text-align:left">ARD International</td><td>${fmtF(cap.ardRet)}</td><td class="${vc(cap.ardCY)}">${fmtF(cap.ardCY)}</td><td class="${vc(cap.ardRet+cap.ardCY)}" style="font-weight:600">${fmtF(cap.ardRet+cap.ardCY)}</td></tr>
-      <tr><td style="text-align:left">Oxbridge Associates UK Ltd</td><td>${fmtF(cap.ukRet)}</td><td class="${vc(cap.ukCY)}">${fmtF(cap.ukCY)}</td><td class="${vc(cap.ukRet+cap.ukCY)}" style="font-weight:600">${fmtF(cap.ukRet+cap.ukCY)}</td></tr>
-      <tr><td style="text-align:left">Oxbridge Associates BV (£)</td><td>${fmtF(cap.bvRet)}</td><td class="${vc(cap.bvCY)}">${fmtF(cap.bvCY)}</td><td class="${vc(cap.bvRet+cap.bvCY)}" style="font-weight:600">${fmtF(cap.bvRet+cap.bvCY)}</td></tr>
+      <tr><td style="text-align:left">${FLAG_GB}ARD International</td><td>${fmtF(cap.ardRet)}</td><td class="${vc(cap.ardCY)}">${fmtF(cap.ardCY)}</td><td class="${vc(cap.ardRet+cap.ardCY)}" style="font-weight:600">${fmtF(cap.ardRet+cap.ardCY)}</td></tr>
+      <tr><td style="text-align:left">${FLAG_GB}Oxbridge Associates UK Ltd</td><td>${fmtF(cap.ukRet)}</td><td class="${vc(cap.ukCY)}">${fmtF(cap.ukCY)}</td><td class="${vc(cap.ukRet+cap.ukCY)}" style="font-weight:600">${fmtF(cap.ukRet+cap.ukCY)}</td></tr>
+      <tr><td style="text-align:left">${FLAG_NL}Oxbridge Associates BV (£)</td><td>${fmtF(cap.bvRet)}</td><td class="${vc(cap.bvCY)}">${fmtF(cap.bvCY)}</td><td class="${vc(cap.bvRet+cap.bvCY)}" style="font-weight:600">${fmtF(cap.bvRet+cap.bvCY)}</td></tr>
       <tr class="tr-t"><td style="text-align:left">Group Total</td><td style="font-weight:700">${fmtF(cap.ukRet+cap.bvRet+cap.ardRet)}</td><td class="${vc(cap.ukCY+cap.bvCY+cap.ardCY)}" style="font-weight:700">${fmtF(cap.ukCY+cap.bvCY+cap.ardCY)}</td><td class="${vc(cap.distribTotal)}" style="font-weight:700;font-size:15px">${fmtF(cap.distribTotal)}</td></tr>
     </tbody>
   </table></div>
@@ -1193,18 +1196,18 @@ function renderPeriods(el) {
         ${dataRow('Gross Profit',months.map(m=>m.gp),'mtr-t',true)}
         ${pctRow('Margin % (ext sales)',months.map(m=>m.marginPct))}
         ${dataRow('Net Profit',months.map(m=>m.net),'mtr-t',true)}
-        <tr class="mtr-h"><td colspan="${n+1}">UK Ltd</td></tr>
+        <tr class="mtr-h"><td colspan="${n+1}">${FLAG_GB}UK Ltd</td></tr>
         ${dataRow('External Sales',months.map(m=>m.ukSales),'',false)}
         ${dataRow('Interco Sales',months.map(m=>m.ukInterco||0),'',false,true)}
         ${dataRow('Gross Profit',months.map(m=>m.ukGP),'',true)}
         ${dataRow('Admin Costs',months.map(m=>m.ukAdmin),'',false,true)}
         ${dataRow('Net Profit',months.map(m=>m.ukNet),'mtr-t',true)}
-        <tr class="mtr-h"><td colspan="${n+1}">BV (€→£)</td></tr>
+        <tr class="mtr-h"><td colspan="${n+1}">${FLAG_NL}BV (€→£)</td></tr>
         ${dataRow('External Sales',months.map(m=>m.bvExtGBP),'',false)}
         ${dataRow('Interco Sales',months.map(m=>(m.bvIntercoEUR||0)*fx),'',false,true)}
         ${dataRow('Gross Profit',months.map(m=>m.bvGPGBP),'',true)}
         ${dataRow('Net Profit',months.map(m=>m.bvNetGBP),'mtr-t',true)}
-        <tr class="mtr-h"><td colspan="${n+1}">ARD International</td></tr>
+        <tr class="mtr-h"><td colspan="${n+1}">${FLAG_GB}ARD International</td></tr>
         ${dataRow('Mgmt Fee',months.map(m=>m.ardInc),'',false)}
         ${dataRow('Net Profit',months.map(m=>m.ardNet),'mtr-t',true)}
       </tbody>
