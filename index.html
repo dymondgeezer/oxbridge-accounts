@@ -606,15 +606,48 @@ async function getBS(org) {
   const today = new Date().toISOString().slice(0,10);
   // Try with paymentsOnly=false to get full accrual BS
   const data  = await xGet(org,`/Reports/BalanceSheet?date=${today}&paymentsOnly=false`);
-  const result = parseReport(data);
+  const result = parseReport(data, org+' BS');
   if(Object.keys(result).filter(k=>!k.startsWith('_')).length < 3) {
     // If empty, try without date parameter
     console.warn(org+' BS empty, trying without date');
     const data2 = await xGet(org,`/Reports/BalanceSheet`);
-    return parseReport(data2, org+' BS retry');
+    const r2 = parseReport(data2, org+' BS retry');
+    r2._rows = data2.Reports?.[0]?.Rows || [];
+    return r2;
   }
-  console.log(org+' BS keys count:', Object.keys(result).filter(k=>!k.startsWith('_')).length);
+  result._rows = data.Reports?.[0]?.Rows || [];
   return result;
+}
+
+// Build a hierarchical section tree from a Xero report's raw Rows (for the detailed BS view)
+// Returns [{title, total, rows:[{name,value}], subs:[...]}]
+function buildBSTree(rawRows, mult) {
+  mult = mult || 1;
+  const num = cell => (parseFloat((cell?.Value||'').replace(/[,\s]/g,''))||0) * mult;
+  function walk(rows) {
+    const out = [];
+    for(const row of (rows||[])) {
+      if(row.RowType==='Section') {
+        const node = {title: row.Title||'', rows: [], subs: [], total: null};
+        for(const sub of (row.Rows||[])) {
+          if(sub.RowType==='Row' && sub.Cells?.length>=2) {
+            const name = sub.Cells[0]?.Value?.trim();
+            if(name) node.rows.push({name, value: num(sub.Cells[1])});
+          } else if(sub.RowType==='SummaryRow' && sub.Cells?.length>=2) {
+            node.total = num(sub.Cells[1]);
+            node.totalLabel = sub.Cells[0]?.Value?.trim();
+          } else if(sub.RowType==='Section') {
+            node.subs.push(...walk([sub]));
+          }
+        }
+        // Fallback total = sum of own rows if no summary row
+        if(node.total==null && node.rows.length) node.total = node.rows.reduce((s,r)=>s+r.value,0);
+        if(node.rows.length || node.subs.length) out.push(node);
+      }
+    }
+    return out;
+  }
+  return walk(rawRows);
 }
 
 function parseReport(data, label) {
@@ -786,6 +819,11 @@ async function refreshAll() {
       },
       ardInv:  ardBS['Investment']||1343963.90,
       ardLoan: Math.abs(ardBS['Virgin Money Loan']||483333.32),
+      bsTree: {
+        uk:  buildBSTree(ukBS._rows, 1),
+        bv:  buildBSTree(bvBS._rows, fx),
+        ard: buildBSTree(ardBS._rows, 1),
+      },
     };
 
     const now = S.data.refreshedAt;
@@ -994,43 +1032,56 @@ function renderPnL(el) {
 
 function renderBalance(el) {
   const d=S.data, bs=d.bs;
+  const fmtS = v => v==null||isNaN(v)?'—':(v<0?'-':'')+'£'+Math.abs(Math.round(v)).toLocaleString('en-GB');
+
+  // Find an entity's Capital & Reserves / Equity total (= Net Assets)
+  const capTotal = key => {
+    const t=(d.bsTree&&d.bsTree[key])||[];
+    const s=t.find(x=>/capital|equity/i.test(x.title));
+    return s? (s.total!=null?s.total:s.rows.reduce((a,r)=>a+r.value,0)) : null;
+  };
+
+  // Render one entity's full BS as collapsible sections
+  function panel(key, title, ccy) {
+    const tree=(d.bsTree&&d.bsTree[key])||[];
+    if(!tree.length) return `<div class="twrap" style="margin:0 0 14px 0"><table class="ptable"><thead><tr><th style="text-align:left">${title}</th><th>${ccy}</th></tr></thead><tbody><tr><td style="text-align:left;color:var(--text3)">No balance sheet data — hit Refresh</td><td></td></tr></tbody></table></div>`;
+    let html='';
+    tree.forEach((sec,si)=>{
+      const gid=key+'-'+si;
+      let detail='';
+      sec.subs.forEach(sub=>{
+        detail+=`<tr class="detail-bs-${gid}" style="display:none"><td style="text-align:left;padding-left:24px;color:var(--text3);font-size:10px;text-transform:uppercase;letter-spacing:.5px">${sub.title}</td><td></td></tr>`;
+        sub.rows.forEach(r=>{ detail+=`<tr class="detail-bs-${gid}" style="display:none"><td style="text-align:left;padding-left:34px">${r.name}</td><td class="${r.value<0?'vn':''}">${fmtS(r.value)}</td></tr>`; });
+        if(sub.total!=null) detail+=`<tr class="detail-bs-${gid}" style="display:none"><td style="text-align:left;padding-left:28px;color:var(--text2)">${sub.totalLabel||('Total '+sub.title)}</td><td style="color:var(--text2);font-weight:600">${fmtS(sub.total)}</td></tr>`;
+      });
+      sec.rows.forEach(r=>{ detail+=`<tr class="detail-bs-${gid}" style="display:none"><td style="text-align:left;padding-left:34px">${r.name}</td><td class="${r.value<0?'vn':''}">${fmtS(r.value)}</td></tr>`; });
+      const total = sec.total!=null ? sec.total : (sec.rows.reduce((s,r)=>s+r.value,0)+sec.subs.reduce((s,su)=>s+(su.total||0),0));
+      html+=`<tr class="tr-h" style="cursor:pointer" onclick="toggleSection('bs-${gid}')"><td style="text-align:left"><button class="expand-btn" id="expand-bs-${gid}">▼</button> ${sec.title}</td><td style="font-weight:700">${fmtS(total)}</td></tr>`;
+      html+=detail;
+    });
+    return `<div class="twrap" style="margin:0 0 14px 0"><table class="ptable">
+      <thead><tr><th style="text-align:left">${title}</th><th>${ccy}</th></tr></thead>
+      <tbody>${html}</tbody></table></div>`;
+  }
+
+  const ukNA=capTotal('uk'), bvNA=capTotal('bv'), ardNA=capTotal('ard');
+
   el.innerHTML=`
-  <div class="ph"><div class="pt">Balance Sheet — Group</div><div class="ps">Live · ${d.refreshedAt.toLocaleString('en-GB',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})}</div></div>
+  <div class="ph"><div class="pt">Balance Sheet</div><div class="ps">Live · ${d.refreshedAt.toLocaleString('en-GB',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})} · BV converted €→£ @ ${d.fx.toFixed(4)} · click any section to expand</div></div>
   <div class="kgrid" style="grid-template-columns:repeat(4,1fr)">
     <div class="kcard"><div class="klabel">Total Stock</div><div class="kval">${fmt(bs.ukStock+bs.bvStock)}</div><div class="ksub">UK ${fmt(bs.ukStock)} · BV ${fmt(bs.bvStock)}</div></div>
     <div class="kcard"><div class="klabel">Total Debtors</div><div class="kval">${fmt(bs.ukDeb+bs.bvDeb)}</div><div class="ksub">UK ${fmt(bs.ukDeb)} · BV ${fmt(bs.bvDeb)}</div></div>
     <div class="kcard"><div class="klabel">Total Creditors</div><div class="kval red">${fmt(bs.ukCred+bs.bvCred)}</div><div class="ksub">UK ${fmt(bs.ukCred)} · BV ${fmt(bs.bvCred)}</div></div>
     <div class="kcard"><div class="klabel">Working Capital</div><div class="kval">${fmt(bs.wc)}</div><div class="ksub">Stock+Debtors−Creditors</div></div>
   </div>
-  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px">
-    <div class="twrap" style="margin:0"><table class="ptable">
-      <thead><tr><th style="text-align:left">UK Ltd</th><th>£</th></tr></thead><tbody>
-      <tr class="tr-h"><td colspan="2">Current Assets</td></tr>
-      <tr><td style="text-align:left;padding-left:20px">Stock</td><td>${fmtF(bs.ukStock)}</td></tr>
-      <tr><td style="text-align:left;padding-left:20px">Debtors</td><td>${fmtF(bs.ukDeb)}</td></tr>
-      <tr><td style="text-align:left;padding-left:20px">Cash &amp; IF</td><td>${fmtF(bs.ukCash)}</td></tr>
-      <tr class="tr-h"><td colspan="2">Liabilities</td></tr>
-      <tr><td style="text-align:left;padding-left:20px">Creditors</td><td class="red">${fmtF(bs.ukCred)}</td></tr>
-      <tr class="tr-t"><td style="text-align:left">Net Working Assets</td><td class="${vc(bs.ukStock+bs.ukDeb-bs.ukCred)}">${fmtF(bs.ukStock+bs.ukDeb-bs.ukCred)}</td></tr>
-      </tbody></table></div>
-    <div class="twrap" style="margin:0"><table class="ptable">
-      <thead><tr><th style="text-align:left">BV (£)</th><th>£</th></tr></thead><tbody>
-      <tr class="tr-h"><td colspan="2">Current Assets</td></tr>
-      <tr><td style="text-align:left;padding-left:20px">Stock</td><td>${fmtF(bs.bvStock)}</td></tr>
-      <tr><td style="text-align:left;padding-left:20px">Debtors</td><td>${fmtF(bs.bvDeb)}</td></tr>
-      <tr><td style="text-align:left;padding-left:20px">Bank</td><td>${fmtF(bs.bvBank)}</td></tr>
-      <tr class="tr-h"><td colspan="2">Liabilities</td></tr>
-      <tr><td style="text-align:left;padding-left:20px">Creditors</td><td class="red">${fmtF(bs.bvCred)}</td></tr>
-      <tr class="tr-t"><td style="text-align:left">Net Working Assets</td><td class="${vc(bs.bvStock+bs.bvDeb-bs.bvCred)}">${fmtF(bs.bvStock+bs.bvDeb-bs.bvCred)}</td></tr>
-      </tbody></table></div>
-    <div class="twrap" style="margin:0"><table class="ptable">
-      <thead><tr><th style="text-align:left">ARD</th><th>£</th></tr></thead><tbody>
-      <tr><td style="text-align:left;padding-left:20px">Investment in subs</td><td>${fmtF(d.ardInv)}</td></tr>
-      <tr><td style="text-align:left;padding-left:20px">Cash</td><td>${fmtF(bs.ardCash)}</td></tr>
-      <tr><td style="text-align:left;padding-left:20px">VM Loan</td><td class="red">${fmtF(d.ardLoan)}</td></tr>
-      <tr class="tr-t"><td style="text-align:left">Net Assets</td><td class="${vc(d.ardInv+bs.ardCash-d.ardLoan)}">${fmtF(d.ardInv+bs.ardCash-d.ardLoan)}</td></tr>
-      </tbody></table></div>
-  </div>`;
+  <div class="kgrid" style="grid-template-columns:repeat(3,1fr)">
+    <div class="kcard" style="border-color:var(--teal)"><div class="klabel">UK Net Assets</div><div class="kval ${ukNA<0?'red':''}">${fmt(ukNA)}</div><div class="ksub">= Total Capital &amp; Reserves</div></div>
+    <div class="kcard" style="border-color:var(--blue)"><div class="klabel">BV Net Assets (£)</div><div class="kval ${bvNA<0?'red':''}">${fmt(bvNA)}</div><div class="ksub">= Total Equity</div></div>
+    <div class="kcard" style="border-color:var(--amber)"><div class="klabel">ARD Net Assets</div><div class="kval ${ardNA<0?'red':''}">${fmt(ardNA)}</div><div class="ksub">= Total Capital &amp; Reserves</div></div>
+  </div>
+  ${panel('uk','Oxbridge Associates UK Ltd','£')}
+  ${panel('bv','Oxbridge Associates BV (€→£)','£')}
+  ${panel('ard','ARD International','£')}`;
 }
 
 function renderCapital(el) {
