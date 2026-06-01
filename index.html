@@ -8,14 +8,14 @@
 :root{
   --bg:#0f0f11;--bg2:#16161a;--bg3:#1e1e24;--bg4:#26262e;
   --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.13);
-  --text:#f0f0f2;--text2:#9a9aaa;--text3:#5a5a6a;
+  --text:#f0f0f2;--text2:#c6c6d2;--text3:#9696a6;
   --accent:#7c6fe0;--green:#22c984;--red:#e05a5a;--amber:#e0a030;
   --blue:#4a9de0;--teal:#2abfa0;--r:10px;--rs:6px;
 }
 body.light{
   --bg:#f4f5f7;--bg2:#ffffff;--bg3:#eef0f3;--bg4:#e2e4e8;
   --border:rgba(0,0,0,0.08);--border2:rgba(0,0,0,0.14);
-  --text:#1a1a2e;--text2:#555566;--text3:#999aaa;
+  --text:#1a1a2e;--text2:#4a4a5a;--text3:#74748a;
   --accent:#6c5fc7;--green:#1aaa6e;--red:#cc3333;--amber:#c07800;
   --blue:#2a7dc0;--teal:#1a9f88;
 }
@@ -1041,25 +1041,50 @@ function renderBalance(el) {
     return s? (s.total!=null?s.total:s.rows.reduce((a,r)=>a+r.value,0)) : null;
   };
 
+  // Classify sections → assets / liabilities; pick out intercompany loan balances
+  const isInterco = n => /amts owed|loan a\.r\.d|oxbridge loan|group company|inter ?co|intercompany/i.test(n||'');
+  const entTotals = key => {
+    const tree=(d.bsTree&&d.bsTree[key])||[];
+    let assets=0, liabs=0, icRecv=0, icPay=0;
+    tree.forEach(sec=>{
+      const t=(sec.title||'').toLowerCase();
+      const isLiab=/liabilit|creditor/.test(t);
+      const isAsset=(/asset|bank/.test(t)) && !isLiab;
+      const tot=sec.total!=null?sec.total:(sec.rows.reduce((s,r)=>s+r.value,0)+sec.subs.reduce((s,su)=>s+(su.total||0),0));
+      if(isLiab) liabs+=tot; else if(isAsset) assets+=tot;
+      const allRows=[...sec.rows, ...sec.subs.flatMap(su=>su.rows)];
+      allRows.forEach(r=>{ if(isInterco(r.name)){ if(isLiab) icPay+=r.value; else if(isAsset) icRecv+=r.value; } });
+    });
+    return {assets, liabs, icRecv, icPay};
+  };
+  const T = {uk:entTotals('uk'), bv:entTotals('bv'), ard:entTotals('ard')};
+  const grossAssets = T.uk.assets+T.bv.assets+T.ard.assets;
+  const grossLiabs  = T.uk.liabs+T.bv.liabs+T.ard.liabs;
+  const icRecvTot   = T.uk.icRecv+T.bv.icRecv+T.ard.icRecv;
+  const icPayTot    = T.uk.icPay+T.bv.icPay+T.ard.icPay;
+  const totalAssets = grossAssets - icRecvTot;
+  const totalLiabs  = grossLiabs - icPayTot;
+  const groupNet    = totalAssets - totalLiabs;
+
   // Render one entity's full BS as collapsible sections
   function panel(key, title, ccy) {
     const tree=(d.bsTree&&d.bsTree[key])||[];
-    if(!tree.length) return `<div class="twrap" style="margin:0 0 14px 0"><table class="ptable"><thead><tr><th style="text-align:left">${title}</th><th>${ccy}</th></tr></thead><tbody><tr><td style="text-align:left;color:var(--text3)">No balance sheet data — hit Refresh</td><td></td></tr></tbody></table></div>`;
+    if(!tree.length) return `<div class="twrap" style="margin:0"><table class="ptable"><thead><tr><th style="text-align:left">${title}</th><th>${ccy}</th></tr></thead><tbody><tr><td style="text-align:left;color:var(--text3)">No data — hit Refresh</td><td></td></tr></tbody></table></div>`;
     let html='';
     tree.forEach((sec,si)=>{
       const gid=key+'-'+si;
       let detail='';
       sec.subs.forEach(sub=>{
-        detail+=`<tr class="detail-bs-${gid}" style="display:none"><td style="text-align:left;padding-left:24px;color:var(--text3);font-size:10px;text-transform:uppercase;letter-spacing:.5px">${sub.title}</td><td></td></tr>`;
-        sub.rows.forEach(r=>{ detail+=`<tr class="detail-bs-${gid}" style="display:none"><td style="text-align:left;padding-left:34px">${r.name}</td><td class="${r.value<0?'vn':''}">${fmtS(r.value)}</td></tr>`; });
-        if(sub.total!=null) detail+=`<tr class="detail-bs-${gid}" style="display:none"><td style="text-align:left;padding-left:28px;color:var(--text2)">${sub.totalLabel||('Total '+sub.title)}</td><td style="color:var(--text2);font-weight:600">${fmtS(sub.total)}</td></tr>`;
+        detail+=`<tr class="detail-bs-${gid}" style="display:none"><td style="text-align:left;padding-left:20px;color:var(--text3);font-size:10px;text-transform:uppercase;letter-spacing:.5px">${sub.title}</td><td></td></tr>`;
+        sub.rows.forEach(r=>{ detail+=`<tr class="detail-bs-${gid}" style="display:none"><td style="text-align:left;padding-left:28px">${r.name}</td><td class="${r.value<0?'vn':''}">${fmtS(r.value)}</td></tr>`; });
+        if(sub.total!=null) detail+=`<tr class="detail-bs-${gid}" style="display:none"><td style="text-align:left;padding-left:24px;color:var(--text2)">${sub.totalLabel||('Total '+sub.title)}</td><td style="color:var(--text2);font-weight:600">${fmtS(sub.total)}</td></tr>`;
       });
-      sec.rows.forEach(r=>{ detail+=`<tr class="detail-bs-${gid}" style="display:none"><td style="text-align:left;padding-left:34px">${r.name}</td><td class="${r.value<0?'vn':''}">${fmtS(r.value)}</td></tr>`; });
+      sec.rows.forEach(r=>{ detail+=`<tr class="detail-bs-${gid}" style="display:none"><td style="text-align:left;padding-left:28px">${r.name}</td><td class="${r.value<0?'vn':''}">${fmtS(r.value)}</td></tr>`; });
       const total = sec.total!=null ? sec.total : (sec.rows.reduce((s,r)=>s+r.value,0)+sec.subs.reduce((s,su)=>s+(su.total||0),0));
       html+=`<tr class="tr-h" style="cursor:pointer" onclick="toggleSection('bs-${gid}')"><td style="text-align:left"><button class="expand-btn" id="expand-bs-${gid}">▼</button> ${sec.title}</td><td style="font-weight:700">${fmtS(total)}</td></tr>`;
       html+=detail;
     });
-    return `<div class="twrap" style="margin:0 0 14px 0"><table class="ptable">
+    return `<div class="twrap" style="margin:0"><table class="ptable">
       <thead><tr><th style="text-align:left">${title}</th><th>${ccy}</th></tr></thead>
       <tbody>${html}</tbody></table></div>`;
   }
@@ -1068,6 +1093,11 @@ function renderBalance(el) {
 
   el.innerHTML=`
   <div class="ph"><div class="pt">Balance Sheet</div><div class="ps">Live · ${d.refreshedAt.toLocaleString('en-GB',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})} · BV converted €→£ @ ${d.fx.toFixed(4)} · click any section to expand</div></div>
+  <div class="kgrid" style="grid-template-columns:repeat(3,1fr)">
+    <div class="kcard" style="border-color:var(--green)"><div class="klabel">Total Assets (Group)</div><div class="kval">${fmt(totalAssets)}</div><div class="ksub">Interco eliminated: ${fmt(icRecvTot)}</div></div>
+    <div class="kcard" style="border-color:var(--red)"><div class="klabel">Total Liabilities (Group)</div><div class="kval red">${fmt(totalLiabs)}</div><div class="ksub">Interco eliminated: ${fmt(icPayTot)}</div></div>
+    <div class="kcard" style="border-color:var(--accent)"><div class="klabel">Group Net Assets</div><div class="kval ${groupNet<0?'red':'green'}">${fmt(groupNet)}</div><div class="ksub">Assets − Liabilities</div></div>
+  </div>
   <div class="kgrid" style="grid-template-columns:repeat(4,1fr)">
     <div class="kcard"><div class="klabel">Total Stock</div><div class="kval">${fmt(bs.ukStock+bs.bvStock)}</div><div class="ksub">UK ${fmt(bs.ukStock)} · BV ${fmt(bs.bvStock)}</div></div>
     <div class="kcard"><div class="klabel">Total Debtors</div><div class="kval">${fmt(bs.ukDeb+bs.bvDeb)}</div><div class="ksub">UK ${fmt(bs.ukDeb)} · BV ${fmt(bs.bvDeb)}</div></div>
@@ -1079,9 +1109,11 @@ function renderBalance(el) {
     <div class="kcard" style="border-color:var(--blue)"><div class="klabel">BV Net Assets (£)</div><div class="kval ${bvNA<0?'red':''}">${fmt(bvNA)}</div><div class="ksub">= Total Equity</div></div>
     <div class="kcard" style="border-color:var(--amber)"><div class="klabel">ARD Net Assets</div><div class="kval ${ardNA<0?'red':''}">${fmt(ardNA)}</div><div class="ksub">= Total Capital &amp; Reserves</div></div>
   </div>
-  ${panel('uk','Oxbridge Associates UK Ltd','£')}
-  ${panel('bv','Oxbridge Associates BV (€→£)','£')}
-  ${panel('ard','ARD International','£')}`;
+  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;align-items:start">
+    ${panel('uk','UK Ltd','£')}
+    ${panel('bv','BV (€→£)','£')}
+    ${panel('ard','ARD','£')}
+  </div>`;
 }
 
 function renderCapital(el) {
