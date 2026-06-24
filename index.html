@@ -587,13 +587,17 @@ async function refreshAll() {
       'Total Other Income','Operating Profit',
       'Profit on Ordinary Activities Before Taxation','Profit after Taxation','_fx']);
     const ukTax   = ukPL['Corporation Tax']||0;
-    const ukAdmin = ('Total Operating Expenses' in ukPL) ? ukPL['Total Operating Expenses']
+    const ukAdminRebuild = ('Total Operating Expenses' in ukPL) ? ukPL['Total Operating Expenses']
                   : ('Total Administrative Costs' in ukPL) ? ukPL['Total Administrative Costs']
                   : Object.entries(ukPL).filter(([k])=>!ukExclude.has(k)&&!k.startsWith('Total ')&&k!=='Corporation Tax').reduce((s,[,v])=>s+v,0);
-    // Prefer Xero's own bottom line (UK reports it as 'Profit after Taxation'); rebuild only as a last resort
-    const ukNet   = ('Net Profit' in ukPL) ? ukPL['Net Profit']
-                  : ('Profit after Taxation' in ukPL) ? ukPL['Profit after Taxation']
-                  : (ukGP - ukAdmin + ukOther - ukTax);
+    // Anchor UK net to Xero's OWN Current Year Earnings (from the balance sheet) — the authoritative
+    // bottom line. UK's P&L feed has no clean net row and doesn't expose every cost line (FX lines are
+    // combined by Xero), so rebuilding from line items leaks; CY earnings is always the true YTD net.
+    const ukNet   = ('Current Year Earnings' in ukBS) ? ukBS['Current Year Earnings']
+                  : ('Net Profit' in ukPL) ? ukPL['Net Profit']
+                  : (ukGP - ukAdminRebuild + ukOther - ukTax);
+    // Total admin shown as the balancing figure (= true all-in admin incl tax) so the card foots to net
+    const ukAdmin = ukGP + ukOther - ukNet;
 
     // ── BV P&L
     const bvExtEUR     = bvPL['External Sales']||0;
@@ -763,7 +767,7 @@ function renderOverview(el) {
   const _fyLabel=`FY ${_fyY}/${String((_fyY+1)%100).padStart(2,'0')}`;
   el.innerHTML=`
   <div class="ph"><div class="pt">Group Overview — Live</div>
-  <div class="ps">As at ${now} · data run ${d.refreshedAt.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})} · EUR→GBP @ ${d.fx.toFixed(4)} · Interco eliminated: ${fmt(co.intercoElim)} · <span style="color:var(--purple)">build UKNET-3</span></div>
+  <div class="ps">As at ${now} · data run ${d.refreshedAt.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})} · EUR→GBP @ ${d.fx.toFixed(4)} · Interco eliminated: ${fmt(co.intercoElim)} · <span style="color:var(--purple)">build UKNET-4</span></div>
   <div class="ps" style="margin-top:4px"><strong style="color:var(--teal)">Year-to-date:</strong> ${_ytdFrom} – ${_ytdTo} (${_fyLabel}) — sales, margin &amp; profit are cumulative for this period; balance-sheet items are as at the run date.</div></div>
   <div class="kgrid" style="grid-template-columns:repeat(6,1fr)">
     <div class="kcard"><div class="klabel">External Sales</div><div class="kval">${fmt(co.extSales)}</div><div class="ksub">excl. intercompany</div></div>
@@ -842,6 +846,10 @@ function renderPnL(el) {
     'Profit on Ordinary Activities Before Taxation','Profit after Taxation','_fx']);
   const ukAdminLines = Object.entries(raw.uk||{}).filter(([k,v])=>!ukExcludeAll.has(k)&&v!==0);
   const ukCOSLines   = Object.entries(raw.uk||{}).filter(([k])=>ukCOSkeys.has(k));
+  // UK's P&L feed doesn't expose every cost line (Xero combines the FX lines), so the visible
+  // admin lines won't sum to the authoritative total — show the difference as one labelled line.
+  const ukAdminLinesSum = ukAdminLines.reduce((s,[,v])=>s+v,0);
+  const ukAdminRecon = uk.admin - ukAdminLinesSum;
 
   const bvCOSkeys = new Set(['External COGS','Inter Co COGS','Logistic Costs',
     'Warehouse Costs','External COGS - Import Duties','Labelling','Damage/Shortage of goods']);
@@ -878,6 +886,7 @@ function renderPnL(el) {
         <tr><td style="text-align:left;padding-left:14px;color:var(--text3)">GP Margin</td><td class="mt">${fmtP(uk.gp/uk.extSales)}</td></tr>
         <tr class="tr-h"><td colspan="2">Admin Expenses <button class="expand-btn" id="expand-ukadm" onclick="toggleSection('ukadm')">▼</button></td></tr>
         ${lineRows(ukAdminLines,'ukadm',fmtF)}
+        ${Math.abs(ukAdminRecon)>1 ? `<tr class="detail-row detail-ukadm" style="display:none"><td style="text-align:left;padding-left:28px;color:var(--text3)">FX &amp; other (per Xero)</td><td class="${vc(-ukAdminRecon)}">${fmtF(Math.abs(ukAdminRecon))}</td></tr>` : ''}
         <tr><td style="text-align:left">Other Income</td><td class="vp">${fmtF(uk.admin>0?(raw.uk?.['Inter-entity BV TP Adjustment']||0)+(raw.uk?.['Sundry Receipts']||0):0)}</td></tr>
         <tr class="tr-t"><td style="text-align:left">Net Profit</td><td class="${vc(uk.net)}" style="font-size:13px;font-weight:700">${fmtF(uk.net)}</td></tr>
       </tbody>
