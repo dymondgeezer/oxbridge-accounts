@@ -545,7 +545,6 @@ function parseReport(data, label) {
     }
   }
   walk(data.Reports?.[0]?.Rows);
-  console.log('RAW REPORT ['+(label||'?')+']:', JSON.stringify(data.Reports?.[0], null, 2));
   m._fx = fxEUR;
   return m;
 }
@@ -1102,6 +1101,32 @@ function calcMonthPnL(uk, bv, ard, fx) {
 // ── PERIODS VIEW
 let _periodsGen = 0;
 
+// Build the months to show (most recent first), each with explicit from/to dates
+// so each column's P&L matches Xero's own month-end report exactly.
+function buildMonthList(numPeriods) {
+  const ymd = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  const today = new Date();
+  const out = [];
+  for(let i=0; i<numPeriods; i++) {
+    const first = new Date(today.getFullYear(), today.getMonth()-i, 1);
+    const last  = new Date(first.getFullYear(), first.getMonth()+1, 0); // last day of that month
+    const to    = (i===0) ? today : last;  // current month = month-to-date; past months = full month
+    out.push({
+      from:  ymd(first),
+      to:    ymd(to),
+      label: first.toLocaleDateString('en-GB',{month:'short',year:'2-digit'}) + (i===0 ? ' (MTD)' : ''),
+    });
+  }
+  return out; // newest first
+}
+
+// One month's P&L via an explicit date range — reads Xero's own subtotals,
+// so it reconciles to the month-end accounts (avoids the timeframe=MONTH split issue).
+async function fetchMonthPnL(org, from, to) {
+  const data = await xGet(org, `/Reports/ProfitAndLoss?fromDate=${from}&toDate=${to}`);
+  return parseReport(data, `${org} ${from}`);
+}
+
 async function loadPeriods(range) {
   periodsState.range = range;
   const myGen = ++_periodsGen;
@@ -1117,38 +1142,39 @@ async function loadPeriods(range) {
   }
 
   const el=$('main');
+  const months = buildMonthList(numPeriods);  // newest first; explicit per-month date ranges
   el.innerHTML=`<div style="text-align:center;padding:60px 0;color:var(--text3)">
-    Loading ${numPeriods} months from Xero… <span style="font-size:11px;opacity:.6">(3 API calls)</span>
+    Loading ${months.length} months from Xero\u2026 <span id="pl-prog" style="font-size:11px;opacity:.6">(0/${months.length})</span>
   </div>`;
 
   try {
-    // Fetch N+1 periods per org (extra period needed as baseline for oldest month subtraction)
-    // Using Xero's periods API: each column = YTD from FY start to that period end
-    // Individual month = YTD[col_i] - YTD[col_i+1]
-    // Exception: first month of new FY (April) = use YTD as-is (it IS just that month)
-    const fetch = (org) => fetchPeriodsPnL(org, numPeriods).catch(()=>({headers:[],rows:{}}));
-    const [ukM, bvM, ardM] = await Promise.all([fetch('uk'), fetch('bv'), fetch('ard')]);
+    await ensureSession();  // refresh the server-side token once before the per-month calls
+
+    const monthlyData = [];
+    for(let i=0; i<months.length; i++) {
+      if(myGen!==_periodsGen) return;  // a newer load superseded this one
+      const mo = months[i];
+      // Each month = its own dated P&L (matches Xero's month-end reports), 3 orgs in parallel
+      const [uk, bv, ard] = await Promise.all([
+        fetchMonthPnL('uk',  mo.from, mo.to).catch(()=>({})),
+        fetchMonthPnL('bv',  mo.from, mo.to).catch(()=>({})),
+        fetchMonthPnL('ard', mo.from, mo.to).catch(()=>({})),
+      ]);
+      monthlyData.push({ label: mo.label, uk, bv, ard });
+      const prog=$('pl-prog'); if(prog) prog.textContent=`(${i+1}/${months.length})`;
+    }
 
     if(myGen!==_periodsGen) return;
-
-    const n = Math.min(numPeriods, Math.max(ukM.headers.length, 0));
-    if(n===0) { el.innerHTML='<div style="color:var(--red);padding:40px">No data returned from Xero. Please try refreshing the main Refresh button first.</div>'; return; }
-
-    const headers = ukM.headers.slice(0, n);
-
-    // The periods API returns INDIVIDUAL monthly figures per column — use directly, no subtraction
-    const monthlyData = headers.map((header, i) => ({
-      label: header,
-      uk:  getColObj(ukM.rows, i),
-      bv:  getColObj(bvM.rows, i),
-      ard: getColObj(ardM.rows, i),
-    }));
+    if(!monthlyData.length) { el.innerHTML='<div style="color:var(--red);padding:40px">No data returned from Xero. Try the main Refresh button first.</div>'; return; }
 
     periodsState.data={monthlyData};
     periodsState.activeCol=0;
     renderPeriods(el);
   } catch(err) {
-    if(myGen===_periodsGen) el.innerHTML=`<div style="color:var(--red);padding:40px">Error: ${err.message}</div>`;
+    if(myGen!==_periodsGen) return;
+    if(err.message==='unauthorized'){ S.pw=''; sessionStorage.removeItem('ox_pw'); showGate(); return; }
+    if(err.message==='not_connected'){ showConnect(); return; }
+    el.innerHTML=`<div style="color:var(--red);padding:40px">Error: ${err.message}</div>`;
   }
 }
 
