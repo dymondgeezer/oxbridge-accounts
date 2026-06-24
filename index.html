@@ -576,7 +576,7 @@ async function refreshAll() {
     const ukInterco    = ukPL['Sales (inter company)']||0;
     const ukTotalSales = ukExtSales + ukInterco;
     const ukCOSkeys    = new Set(['Purchases','Purchase (inter company)','Logistic Costs',
-      'Damage/Shortage of goods','Plastic Packaging Tax','Warehouse Costs']);
+      'Damage/Shortage of goods','Plastic Packaging Tax','Warehouse Costs','Duty']);
     const ukCOS   = ('Total Cost of Sales' in ukPL) ? ukPL['Total Cost of Sales'] : Object.entries(ukPL).filter(([k])=>ukCOSkeys.has(k)).reduce((s,[,v])=>s+v,0);
     const ukGP    = ('Gross Profit' in ukPL) ? ukPL['Gross Profit'] : (ukTotalSales - ukCOS);
     const ukOther = (ukPL['Inter-entity BV TP Adjustment']||0)+(ukPL['Sundry Receipts']||0);
@@ -586,8 +586,14 @@ async function refreshAll() {
       'Total Turnover','Total Cost of Sales','Total Administrative Costs',
       'Total Other Income','Operating Profit',
       'Profit on Ordinary Activities Before Taxation','Profit after Taxation','_fx']);
-    const ukAdmin = ('Total Operating Expenses' in ukPL) ? ukPL['Total Operating Expenses'] : Object.entries(ukPL).filter(([k])=>!ukExclude.has(k)&&!k.startsWith('Total ')).reduce((s,[,v])=>s+v,0);
-    const ukNet   = ('Net Profit' in ukPL) ? ukPL['Net Profit'] : (ukGP - ukAdmin + ukOther);
+    const ukTax   = ukPL['Corporation Tax']||0;
+    const ukAdmin = ('Total Operating Expenses' in ukPL) ? ukPL['Total Operating Expenses']
+                  : ('Total Administrative Costs' in ukPL) ? ukPL['Total Administrative Costs']
+                  : Object.entries(ukPL).filter(([k])=>!ukExclude.has(k)&&!k.startsWith('Total ')&&k!=='Corporation Tax').reduce((s,[,v])=>s+v,0);
+    // Prefer Xero's own bottom line (UK reports it as 'Profit after Taxation'); rebuild only as a last resort
+    const ukNet   = ('Net Profit' in ukPL) ? ukPL['Net Profit']
+                  : ('Profit after Taxation' in ukPL) ? ukPL['Profit after Taxation']
+                  : (ukGP - ukAdmin + ukOther - ukTax);
 
     // ── BV P&L
     const bvExtEUR     = bvPL['External Sales']||0;
@@ -757,7 +763,7 @@ function renderOverview(el) {
   const _fyLabel=`FY ${_fyY}/${String((_fyY+1)%100).padStart(2,'0')}`;
   el.innerHTML=`
   <div class="ph"><div class="pt">Group Overview — Live</div>
-  <div class="ps">As at ${now} · data run ${d.refreshedAt.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})} · EUR→GBP @ ${d.fx.toFixed(4)} · Interco eliminated: ${fmt(co.intercoElim)}</div>
+  <div class="ps">As at ${now} · data run ${d.refreshedAt.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})} · EUR→GBP @ ${d.fx.toFixed(4)} · Interco eliminated: ${fmt(co.intercoElim)} · <span style="color:var(--purple)">build UKNET-3</span></div>
   <div class="ps" style="margin-top:4px"><strong style="color:var(--teal)">Year-to-date:</strong> ${_ytdFrom} – ${_ytdTo} (${_fyLabel}) — sales, margin &amp; profit are cumulative for this period; balance-sheet items are as at the run date.</div></div>
   <div class="kgrid" style="grid-template-columns:repeat(6,1fr)">
     <div class="kcard"><div class="klabel">External Sales</div><div class="kval">${fmt(co.extSales)}</div><div class="ksub">excl. intercompany</div></div>
@@ -827,7 +833,7 @@ function renderPnL(el) {
 
   // Build line-by-line rows for UK
   const ukCOSkeys = new Set(['Purchases','Purchase (inter company)','Logistic Costs',
-    'Damage/Shortage of goods','Plastic Packaging Tax','Warehouse Costs']);
+    'Damage/Shortage of goods','Plastic Packaging Tax','Warehouse Costs','Duty']);
   const ukExcludeAll = new Set([...ukCOSkeys,'Sales','Sales (inter company)',
     'Inter-entity BV TP Adjustment','Sundry Receipts',
     'Gross Profit','Net Profit','Foreign Currency Gains and Losses',
@@ -1061,12 +1067,17 @@ function calcMonthPnL(uk, bv, ard, fx) {
 
   const ukSales   = g(uk,'Sales');
   const ukInterco = g(uk,'Sales (inter company)');
-  const ukCOS     = ['Purchases','Purchase (inter company)','Logistic Costs','Damage/Shortage of goods','Plastic Packaging Tax','Warehouse Costs'].reduce((s,k)=>s+g(uk,k),0);
+  const ukCOS     = ['Purchases','Purchase (inter company)','Logistic Costs','Damage/Shortage of goods','Plastic Packaging Tax','Warehouse Costs','Duty'].reduce((s,k)=>s+g(uk,k),0);
   const ukGP      = ('Gross Profit' in uk) ? g(uk,'Gross Profit') : (ukSales + ukInterco - ukCOS);
-  const ukExclude = new Set(['Sales','Sales (inter company)','Purchases','Purchase (inter company)','Logistic Costs','Damage/Shortage of goods','Plastic Packaging Tax','Warehouse Costs','Inter-entity BV TP Adjustment','Sundry Receipts','Gross Profit','Net Profit','Foreign Currency Gains and Losses','Total Turnover','Total Cost of Sales','Total Administrative Costs','Total Other Income','Operating Profit','Profit on Ordinary Activities Before Taxation','Profit after Taxation','_fx']);
-  const ukAdmin   = ('Total Operating Expenses' in uk) ? g(uk,'Total Operating Expenses') : Object.entries(uk).filter(([k])=>!ukExclude.has(k)&&!k.startsWith('Total ')).reduce((s,[,v])=>s+v,0);
+  const ukExclude = new Set(['Sales','Sales (inter company)','Purchases','Purchase (inter company)','Logistic Costs','Damage/Shortage of goods','Plastic Packaging Tax','Warehouse Costs','Duty','Inter-entity BV TP Adjustment','Sundry Receipts','Gross Profit','Net Profit','Foreign Currency Gains and Losses','Total Turnover','Total Cost of Sales','Total Administrative Costs','Total Other Income','Operating Profit','Profit on Ordinary Activities Before Taxation','Profit after Taxation','_fx']);
+  const ukTax     = g(uk,'Corporation Tax');
+  const ukAdmin   = ('Total Operating Expenses' in uk) ? g(uk,'Total Operating Expenses')
+                  : ('Total Administrative Costs' in uk) ? g(uk,'Total Administrative Costs')
+                  : Object.entries(uk).filter(([k])=>!ukExclude.has(k)&&!k.startsWith('Total ')&&k!=='Corporation Tax').reduce((s,[,v])=>s+v,0);
   const ukOther   = g(uk,'Inter-entity BV TP Adjustment') + g(uk,'Sundry Receipts');
-  const ukNet     = ('Net Profit' in uk) ? g(uk,'Net Profit') : (ukGP - ukAdmin + ukOther);
+  const ukNet     = ('Net Profit' in uk) ? g(uk,'Net Profit')
+                  : ('Profit after Taxation' in uk) ? g(uk,'Profit after Taxation')
+                  : (ukGP - ukAdmin + ukOther - ukTax);
 
   const bvExt     = g(bv,'External Sales');
   const bvInterco = g(bv,'Inter Co Sales');
